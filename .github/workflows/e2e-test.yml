@@ -21,6 +21,7 @@ on:
     paths:
       - "app/**"
       - "infra/**"
+      - "scripts/**"
       - "test.sh"
       - "azure.yaml"
 
@@ -67,6 +68,8 @@ jobs:
 
       - name: Provision infrastructure (azd provision)
         run: azd provision --no-prompt
+        env:
+          PREPROVISION_RG_TAGS: ${{ secrets.PREPROVISION_RG_TAGS }}
 
       - name: Deploy application (azd deploy with retries)
         run: |

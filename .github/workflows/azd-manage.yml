@@ -53,3 +53,5 @@ jobs:
 
       - name: Run azd ${{ inputs.action }}
         run: azd ${{ inputs.action }} --no-prompt
+        env:
+          PREPROVISION_RG_TAGS: ${{ secrets.PREPROVISION_RG_TAGS }}
