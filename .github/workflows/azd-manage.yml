@@ -1,0 +1,51 @@
+name: AZD Manage (Up / Down)
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Action to perform"
+        required: true
+        type: choice
+        options:
+          - up
+          - down
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AZD_ENVIRONMENT: gha
+  AZD_LOCATION: japaneast
+
+jobs:
+  azd:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install azd
+        uses: Azure/setup-azd@v2
+
+      - name: Azure Login via OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Authenticate azd with federated credential
+        run: azd auth login --client-id "${{ vars.AZURE_CLIENT_ID }}" --federated-credential-provider github --tenant-id "${{ secrets.AZURE_TENANT_ID }}"
+
+      - name: Initialize azd environment
+        run: |
+          azd env new "$AZD_ENVIRONMENT" || true
+          azd env select "$AZD_ENVIRONMENT"
+          azd env set AZURE_LOCATION "$AZD_LOCATION"
+          azd env set AZURE_SUBSCRIPTION_ID "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+
+      - name: Run azd ${{ inputs.action }}
+        run: azd ${{ inputs.action }} --no-prompt
