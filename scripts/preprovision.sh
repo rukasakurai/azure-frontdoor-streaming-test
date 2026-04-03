@@ -32,13 +32,13 @@ args+=(--tags "azd-env-name=${AZURE_ENV_NAME}")
 
 if [ -n "${PREPROVISION_RG_TAGS:-}" ]; then
   echo "Applying custom tags from PREPROVISION_RG_TAGS..."
-  if ! echo "$PREPROVISION_RG_TAGS" | jq empty 2>/dev/null; then
-    echo "::error::PREPROVISION_RG_TAGS is not valid JSON"
-    exit 1
+  if echo "$PREPROVISION_RG_TAGS" | jq empty 2>/dev/null; then
+    while IFS= read -r tag; do
+      [ -n "$tag" ] && args+=("$tag")
+    done < <(echo "$PREPROVISION_RG_TAGS" | jq -r 'to_entries[] | "\(.key)=\(.value)"')
+  else
+    echo "::warning::PREPROVISION_RG_TAGS is not valid JSON — skipping custom tags"
   fi
-  while IFS= read -r tag; do
-    [ -n "$tag" ] && args+=("$tag")
-  done < <(echo "$PREPROVISION_RG_TAGS" | jq -r 'to_entries[] | "\(.key)=\(.value)"')
 fi
 
 az group create "${args[@]}"
