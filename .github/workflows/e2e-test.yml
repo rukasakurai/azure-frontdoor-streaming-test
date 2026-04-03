@@ -73,11 +73,11 @@ jobs:
           MAX_RETRIES=5
           for i in $(seq 1 $MAX_RETRIES); do
             echo "=== azd deploy attempt $i/$MAX_RETRIES ==="
-            if azd deploy --all; then
+            if azd deploy; then
               echo "azd deploy succeeded on attempt $i"
               break
             fi
-            if [ "$i" = "$MAX_RETRIES" ]; then
+            if [ "$i" -eq "$MAX_RETRIES" ]; then
               echo "::error::azd deploy failed after $MAX_RETRIES attempts"
               exit 1
             fi
