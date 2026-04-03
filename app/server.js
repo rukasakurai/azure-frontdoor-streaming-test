@@ -115,9 +115,10 @@ fastify.get('/sse-agent', (request, reply) => {
 
   const proxyReq = https.request(options, (proxyRes) => {
     if (proxyRes.statusCode !== 200) {
-      let errBody = ''
-      proxyRes.on('data', (chunk) => { errBody += chunk })
+      const errChunks = []
+      proxyRes.on('data', (chunk) => { errChunks.push(chunk) })
       proxyRes.on('end', () => {
+        const errBody = Buffer.concat(errChunks).toString('utf8')
         fastify.log.error({ statusCode: proxyRes.statusCode, body: errBody }, 'Foundry API error')
         reply.raw.write(`data: ${JSON.stringify({ error: 'Foundry API error', statusCode: proxyRes.statusCode })}\n\n`)
         reply.raw.end()
