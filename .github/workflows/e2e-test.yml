@@ -65,8 +65,26 @@ jobs:
           azd env set AZURE_LOCATION "$AZD_LOCATION"
           azd env set AZURE_SUBSCRIPTION_ID "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
 
-      - name: Deploy infrastructure (azd up)
-        run: azd up --no-prompt
+      - name: Provision infrastructure (azd provision)
+        run: azd provision --no-prompt
+
+      - name: Deploy application (azd deploy with retries)
+        run: |
+          MAX_RETRIES=5
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "=== azd deploy attempt $i/$MAX_RETRIES ==="
+            if azd deploy --all; then
+              echo "azd deploy succeeded on attempt $i"
+              break
+            fi
+            if [ "$i" = "$MAX_RETRIES" ]; then
+              echo "::error::azd deploy failed after $MAX_RETRIES attempts"
+              exit 1
+            fi
+            WAIT=$((i * 30))
+            echo "::warning::azd deploy failed (attempt $i/$MAX_RETRIES). Retrying in ${WAIT}s..."
+            sleep "$WAIT"
+          done
 
       - name: Extract deployment URLs
         id: urls

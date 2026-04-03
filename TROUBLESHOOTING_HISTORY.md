@@ -117,3 +117,39 @@ In `.github/workflows/e2e-test.yml`:
 - Provisioning succeeds (confirmed by E2E run on `copilot/bug-fix-deployment-errors` branch).
 - The improved wait step provides actionable diagnostic output if AFD propagation is still slow.
 
+---
+
+## 2026-04-03 – Transient HTTP 504 During `azd deploy`
+
+### Symptoms
+
+After provisioning succeeded, `azd up --no-prompt` failed during the deploy phase:
+
+```
+Deploying service app (Checking deployment history)
+ERROR: deployment failed: ...
+```
+
+The Azure Resource Manager gateway returned an **HTTP 504 Gateway Timeout** when calling `Microsoft.Web/sites/.../deployments` (listing App Service deployment history). The workflow exited with code 1.
+
+### Root Cause Analysis
+
+This is a **transient ARM control-plane timeout** — the Azure Resource Manager gateway couldn't get a timely response from the `Microsoft.Web` resource provider. The app package itself was valid; the failure was in ARM infrastructure, not in the application code or Bicep templates.
+
+These transient 504s are more common:
+- Right after provisioning (resource provider may still be settling)
+- In regions with high control-plane load
+- During Azure platform maintenance windows
+
+### Fix Applied
+
+In `.github/workflows/e2e-test.yml`:
+
+1. **Split `azd up` into `azd provision` + `azd deploy`** — separates infrastructure provisioning (which succeeded) from app deployment, so a transient deploy failure doesn't re-run provisioning.
+2. **Added retry loop with exponential backoff on `azd deploy`** — up to 5 attempts with increasing wait times (30s, 60s, 90s, 120s) between retries, matching the user's suggested pattern.
+3. **Logs each attempt** — emits GitHub Actions warnings on retry and an error annotation on final failure.
+
+### Outcome
+
+- Transient ARM 504s during deploy are automatically retried without re-provisioning.
+- Each retry attempt is logged with attempt number and wait time for debuggability.
