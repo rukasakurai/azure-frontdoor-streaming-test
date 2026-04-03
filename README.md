@@ -40,6 +40,21 @@ The `/sse` and `/ndjson` endpoints use fixed-interval mock data, while `/sse-age
 azd up
 ```
 
+Before provisioning, the `preprovision` hook (`scripts/preprovision.sh`) automatically
+creates the target resource group with an optional set of custom tags. This is
+useful when Azure Policy requires specific tags at resource-group creation time.
+
+To apply custom tags, set the `PREPROVISION_RG_TAGS` environment variable (or
+GitHub repository secret) to a JSON object:
+
+```bash
+export PREPROVISION_RG_TAGS='{"team":"platform","cost-center":"12345"}'
+azd up
+```
+
+If `PREPROVISION_RG_TAGS` is unset or empty, the resource group is created with
+only the default `azd-env-name` tag.
+
 `azd up` provisions:
 - Resource group
 - App Service Plan (Linux B1)
@@ -147,6 +162,20 @@ The App Service receives three environment variables from the Foundry deployment
 | `FOUNDRY_DEPLOYMENT_NAME` | Name of the deployed model (default: `gpt-4o-mini`) |
 
 The `/sse-agent` endpoint returns HTTP 503 when these variables are not configured, and `test.sh` automatically skips the agent test in that case.
+
+### Resource Group Tags (CI/CD)
+
+The `e2e-test` and `azd-manage` workflows pass the `PREPROVISION_RG_TAGS`
+repository secret to the `preprovision` hook. To apply custom tags during CI/CD
+provisioning, add a repository secret named `PREPROVISION_RG_TAGS` containing a
+JSON object:
+
+```json
+{"team":"platform","cost-center":"12345"}
+```
+
+If the secret is not configured, the resource group is created with only the
+default `azd-env-name` tag.
 
 ## Technology Reference
 
