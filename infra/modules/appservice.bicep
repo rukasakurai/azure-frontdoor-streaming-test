@@ -10,7 +10,7 @@ param tags object = {}
 @description('Resource ID of the App Service Plan.')
 param appServicePlanId string
 
-resource appService 'Microsoft.Web/sites@2022-09-01' = {
+resource appService 'Microsoft.Web/sites@2024-04-01' = {
   name: name
   location: location
   tags: union(tags, { 'azd-service-name': 'app' })
