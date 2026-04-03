@@ -1,0 +1,107 @@
+name: E2E Infrastructure & Streaming Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      cleanup:
+        description: "Run azd down after tests"
+        required: false
+        type: boolean
+        default: true
+      environment:
+        description: "azd environment name"
+        required: false
+        type: string
+        default: "gha-e2e"
+      location:
+        description: "Azure region"
+        required: false
+        type: string
+        default: "japaneast"
+  pull_request:
+    paths:
+      - "app/**"
+      - "infra/**"
+      - "test.sh"
+      - "azure.yaml"
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AZD_ENVIRONMENT: ${{ inputs.environment || 'gha-e2e' }}
+  AZD_LOCATION: ${{ inputs.location || 'japaneast' }}
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install azd
+        uses: Azure/setup-azd@v2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Azure Login via OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Authenticate azd with federated credential
+        run: azd auth login --client-id "${{ vars.AZURE_CLIENT_ID }}" --federated-credential-provider github --tenant-id "${{ secrets.AZURE_TENANT_ID }}"
+
+      - name: Initialize azd environment
+        run: |
+          azd env new "$AZD_ENVIRONMENT" || true
+          azd env select "$AZD_ENVIRONMENT"
+          azd env set AZURE_LOCATION "$AZD_LOCATION"
+          azd env set AZURE_SUBSCRIPTION_ID "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+
+      - name: Deploy infrastructure (azd up)
+        run: azd up --no-prompt
+
+      - name: Extract deployment URLs
+        id: urls
+        run: |
+          SERVICE_APP_URI=$(azd env get-value SERVICE_APP_URI)
+          AFD_URI=$(azd env get-value AFD_URI)
+          echo "direct_url=$SERVICE_APP_URI" >> "$GITHUB_OUTPUT"
+          echo "afd_url=$AFD_URI" >> "$GITHUB_OUTPUT"
+          echo "Direct URL: $SERVICE_APP_URI"
+          echo "AFD URL: $AFD_URI"
+
+      - name: Wait for Front Door endpoint to become ready
+        run: |
+          echo "Waiting for AFD endpoint to respond..."
+          ready=false
+          for i in $(seq 1 30); do
+            if curl -sf --max-time 10 "${{ steps.urls.outputs.afd_url }}/health" > /dev/null 2>&1; then
+              echo "AFD endpoint is ready"
+              ready=true
+              break
+            fi
+            echo "Attempt $i/30 – waiting 10s..."
+            sleep 10
+          done
+          if [ "$ready" != "true" ]; then
+            echo "::error::AFD endpoint did not become ready after 30 attempts"
+            exit 1
+          fi
+
+      - name: Run streaming test
+        run: |
+          chmod +x test.sh
+          ./test.sh "${{ steps.urls.outputs.direct_url }}" "${{ steps.urls.outputs.afd_url }}"
+
+      - name: Cleanup (azd down)
+        if: always() && (inputs.cleanup != false || github.event_name == 'pull_request')
+        run: azd down --no-prompt --force --purge
