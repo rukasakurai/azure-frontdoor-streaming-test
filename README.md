@@ -92,14 +92,14 @@ For each endpoint and each URL it:
 
 **Exit code 0** = PASS, **exit code 1** = FAIL.
 
-## Expected Results
-
-> To be filled after running the test against a live deployment.
+## Results
 
 | Scenario | Expected | Observed |
 |----------|----------|----------|
-| SSE via AFD | Streaming (≤2 s lag per chunk) | TBD |
-| NDJSON via AFD | Streaming (≤2 s lag per chunk) | TBD |
+| SSE via AFD | Streaming (≤2 s lag per chunk) | ✅ Streaming — per-chunk Δ from −0.003 s to +0.007 s |
+| NDJSON via AFD | Streaming (≤2 s lag per chunk) | ✅ Streaming — per-chunk Δ from +0.033 s to +0.068 s |
+
+> Tested 2026-04-03 in Japan East. Azure Front Door Premium passes through SSE and NDJSON streams without buffering.
 
 ## Local Development
 
