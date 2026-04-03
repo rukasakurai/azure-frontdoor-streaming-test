@@ -73,7 +73,7 @@ resource endpoint 'Microsoft.Cdn/profiles/afdEndpoints@2024-09-01' = {
 resource route 'Microsoft.Cdn/profiles/afdEndpoints/routes@2024-09-01' = {
   parent: endpoint
   name: routeName
-  dependsOn: [origin]
+  dependsOn: [origin, originTimeoutRule]
   properties: {
     originGroup: {
       id: originGroup.id
@@ -101,6 +101,7 @@ resource ruleSet 'Microsoft.Cdn/profiles/ruleSets@2024-09-01' = {
 resource originTimeoutRule 'Microsoft.Cdn/profiles/ruleSets/rules@2024-09-01' = {
   parent: ruleSet
   name: 'setOriginTimeout'
+  dependsOn: [origin]
   properties: {
     order: 1
     conditions: []
