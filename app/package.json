@@ -1,0 +1,16 @@
+{
+  "name": "azure-frontdoor-streaming-test-app",
+  "version": "1.0.0",
+  "description": "Fastify server for testing Azure Front Door streaming behavior",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "fastify": "^5.8.4"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

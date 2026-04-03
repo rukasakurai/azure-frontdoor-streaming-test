@@ -1,0 +1,13 @@
+name: azure-frontdoor-streaming-test
+metadata:
+  template: azure-frontdoor-streaming-test@0.0.1
+
+services:
+  app:
+    project: ./app
+    host: appservice
+    language: js
+
+infra:
+  provider: bicep
+  path: infra
