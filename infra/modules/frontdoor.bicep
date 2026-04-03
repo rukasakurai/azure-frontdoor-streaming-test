@@ -40,10 +40,6 @@ resource originGroup 'Microsoft.Cdn/profiles/originGroups@2023-05-01' = {
       probeIntervalInSeconds: 30
     }
     sessionAffinityState: 'Disabled'
-    responseBasedAfdOriginErrorDetectionSettings: {
-      responseBasedDetectedErrorTypes: 'TcpErrorsOnly'
-      responseBasedFailoverThresholdPercentage: 10
-    }
   }
 }
 
