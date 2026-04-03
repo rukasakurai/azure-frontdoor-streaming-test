@@ -80,7 +80,7 @@ afdProfile
 |---|---|
 | Splitting AFD deployment into two Bicep modules (profile + children, then route) | Adds complexity; explicit `dependsOn` is the simpler and standard approach |
 | Adding a random suffix to the endpoint name | The endpoint name already uses `uniqueString`; the Conflict error was a cascading failure, not a true naming collision |
-| Removing `originPath: '/'` from the route | Valid configuration; not related to the root cause |
+| Removing `originPath: '/'` from the route | Not related to this race condition; addressed separately in the 2026-04-03 AFD 404 issue below |
 
 ---
 
@@ -152,4 +152,77 @@ In `.github/workflows/e2e-test.yml`:
 ### Outcome
 
 - Transient ARM 504s during deploy are automatically retried without re-provisioning.
-- Each retry attempt is logged with attempt number and wait time for debuggability.
+---
+
+## 2026-04-03 – AFD Consistently Returns Its Own "Page Not Found" (HTTP 404) After 10-Minute Wait
+
+### Symptoms
+
+The "Wait for Front Door endpoint to become ready" step returned HTTP 404 with Azure Front Door's own HTML error page on every single attempt across the full 10-minute wait window:
+
+```
+Page not found
+Oops! We weren't able to find your Azure Front Door Service configuration.
+If it's a new configuration that you recently created, it might not be ready yet.
+```
+
+DNS resolved correctly, TLS completed cleanly, and the origin App Service returned HTTP 200 on `/health` directly. The issue was isolated to the AFD routing layer.
+
+### Root Cause Analysis
+
+Two compounding issues were identified:
+
+**Issue 1 — `originPath: '/'` causes double-slash path forwarding**
+
+The route in `frontdoor.bicep` had `originPath: '/'`. Azure Front Door's path forwarding semantics **prepend** `originPath` to the incoming request path. For a request to `/health` with `originPath: '/'`, AFD forwards `/ + /health = //health` to the origin. App Service (Fastify) normalises `//health` differently from `/health`, causing the origin to return 404. AFD then surfaces its own error page.
+
+**Issue 2 — AFD propagation in Japan East exceeded 16 minutes**
+
+From provisioning completion to end of the 10-minute wait, approximately 16+ minutes elapsed without AFD becoming ready. AFD's own error message ("If it's a new configuration that you recently created, it might not be ready yet. You should check again in a few minutes.") indicates the route hadn't propagated globally within that window. Japan East can exhibit longer propagation times.
+
+**Issue 3 — Redundant `ruleSet` / `originTimeoutRule` resources added unnecessary propagation overhead**
+
+The `streamingRules` rule set and `setOriginTimeout` rule were intended to "disable caching and set origin response timeout" but were effectively a NO-OP:
+- **Origin response timeout**: Already configured at the AFD profile level via `originResponseTimeoutSeconds: 240`.
+- **Caching bypass**: The rule's `RouteConfigurationOverride` action had no `cacheConfiguration` field, so it did not disable caching. The app already sends `Cache-Control: no-cache` on all streaming responses, which AFD respects without a rule.
+- **Forwarding protocol override**: Set `HttpsOnly`, which is identical to the route's own `forwardingProtocol: 'HttpsOnly'` — no change.
+
+Every extra AFD resource (rule set, rule) must propagate globally, adding to the time before the endpoint becomes routable. Removing the NO-OP resources reduces the propagation surface.
+
+### Fix Applied
+
+In `infra/modules/frontdoor.bicep`:
+
+1. **Removed `originPath: '/'`** from the route — AFD now forwards the request path unchanged to the origin (default pass-through). Requests to `/health` reach the origin at `/health`.
+2. **Added `enabledState: 'Enabled'`** to the route — explicit state prevents any ambiguity about default values across API versions.
+3. **Removed `ruleSet` and `originTimeoutRule` resources** — the rule set was a NO-OP and required additional global propagation. `originResponseTimeoutSeconds: 240` at the profile level and `Cache-Control: no-cache` in app responses cover the original intent.
+4. **Updated route `dependsOn`** — now only `[origin]` (correct), removing the no-longer-existent `originTimeoutRule`.
+
+In `.github/workflows/e2e-test.yml`:
+
+5. **Increased AFD wait budget from 60×10s (10 min) to 90×20s (30 min)** — empirical observation shows Japan East AFD propagation can take 16–25+ minutes from provisioning completion. The `--max-time` for each curl probe was also increased from 10s to 15s.
+
+### Deployment ordering after the fix
+
+```
+afdProfile
+├── originGroup ──► origin
+│                     │
+│                     ▼
+├── endpoint ──► route (dependsOn: [origin])
+```
+
+### Outcome
+
+- Route configuration is simpler and has fewer resources to propagate.
+- Path forwarding is unambiguous: `/*` → origin root, no double-slash.
+- Wait budget is 30 minutes, comfortably covering observed Japan East propagation times.
+
+### Strategies That Were Considered but Not Applied
+
+| Strategy | Reason Not Applied |
+|---|---|
+| Keep `ruleSet` with an explicit `cacheConfiguration: { cacheType: 'NoCache' }` rule | The app already sets `Cache-Control: no-cache`; an AFD rule is redundant. Adds propagation time. |
+| Poll root path `/` instead of `/health` | The route pattern `/*` covers both equally; `/health` is preferred as it is a dedicated health endpoint. |
+| Use AFD provisioning state API to wait instead of HTTP probe | Requires additional Azure CLI calls; HTTP probe is simpler and more representative of real-world readiness. |
+
