@@ -112,12 +112,6 @@ resource originTimeoutRule 'Microsoft.Cdn/profiles/ruleSets/rules@2024-09-01' = 
             }
             forwardingProtocol: 'HttpsOnly'
           }
-          cacheConfiguration: {
-            // cacheType is a valid discriminator in the REST API for disabling cache;
-            // Bicep emits BCP037 because its generated types don't model the union,
-            // but the ARM deployment accepts it correctly.
-            cacheType: 'NoCache'
-          }
         }
       }
     ]

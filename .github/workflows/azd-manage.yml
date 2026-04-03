@@ -10,13 +10,17 @@ on:
         options:
           - up
           - down
+      environment:
+        description: "azd environment name (defaults to a unique value per run)"
+        required: false
+        type: string
 
 permissions:
   id-token: write
   contents: read
 
 env:
-  AZD_ENVIRONMENT: gha
+  AZD_ENVIRONMENT: ${{ inputs.environment || format('gha-{0}-{1}', github.run_id, github.run_attempt) }}
   AZD_LOCATION: japaneast
 
 jobs:
