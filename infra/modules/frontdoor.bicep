@@ -99,7 +99,7 @@ resource ruleSet 'Microsoft.Cdn/profiles/ruleSets@2023-05-01' = {
   name: 'streamingRules'
 }
 
-resource originTimeoutRule 'Microsoft.Cdn/profiles/ruleSets/rules@2023-05-01' = {
+resource originTimeoutRule 'Microsoft.Cdn/profiles/ruleSets/rules@2024-02-01' = {
   parent: ruleSet
   name: 'setOriginTimeout'
   properties: {
@@ -117,9 +117,7 @@ resource originTimeoutRule 'Microsoft.Cdn/profiles/ruleSets/rules@2023-05-01' = 
             forwardingProtocol: 'HttpsOnly'
           }
           cacheConfiguration: {
-            queryStringCachingBehavior: 'IgnoreQueryString'
-            cacheBehavior: 'Disabled'
-            isCompressionEnabled: 'Disabled'
+            cacheType: 'NoCache'
           }
         }
       }
