@@ -115,23 +115,24 @@ jobs:
       - name: Wait for Front Door endpoint to become ready
         run: |
           AFD_HEALTH="${{ steps.urls.outputs.afd_url }}/health"
-          MAX_ATTEMPTS=60
-          echo "Waiting for AFD endpoint to respond at $AFD_HEALTH ..."
+          MAX_ATTEMPTS=90
+          WAIT_INTERVAL=20
+          echo "Waiting for AFD endpoint to respond at $AFD_HEALTH (up to $((MAX_ATTEMPTS * WAIT_INTERVAL / 60)) min)..."
           ready=false
           for i in $(seq 1 $MAX_ATTEMPTS); do
-            status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$AFD_HEALTH" || echo "000")
+            status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$AFD_HEALTH" || echo "000")
             if [ "$status" = "200" ]; then
               echo "Attempt $i/$MAX_ATTEMPTS – HTTP $status – AFD endpoint is ready"
               ready=true
               break
             fi
-            echo "Attempt $i/$MAX_ATTEMPTS – HTTP $status – waiting 10s..."
-            sleep 10
+            echo "Attempt $i/$MAX_ATTEMPTS – HTTP $status – waiting ${WAIT_INTERVAL}s..."
+            sleep "$WAIT_INTERVAL"
           done
           if [ "$ready" != "true" ]; then
-            echo "::error::AFD endpoint did not become ready after $MAX_ATTEMPTS attempts"
+            echo "::error::AFD endpoint did not become ready after $MAX_ATTEMPTS attempts (~$((MAX_ATTEMPTS * WAIT_INTERVAL / 60)) min)"
             echo "--- Final diagnostic: verbose curl ---"
-            curl -sv --max-time 10 "$AFD_HEALTH" 2>&1 || true
+            curl -sv --max-time 15 "$AFD_HEALTH" 2>&1 || true
             echo "--- DNS lookup ---"
             AFD_HOST=$(echo "$AFD_HEALTH" | sed 's|https://||;s|/.*||')
             nslookup "$AFD_HOST" 2>&1 || true
