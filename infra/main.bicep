@@ -37,6 +37,19 @@ module appService './modules/appservice.bicep' = {
     location: location
     tags: tags
     appServicePlanId: appServicePlan.outputs.id
+    foundryEndpoint: foundry.outputs.endpoint
+    foundryApiKey: foundry.outputs.apiKey
+    foundryDeploymentName: foundry.outputs.deploymentName
+  }
+}
+
+module foundry './modules/foundry.bicep' = {
+  name: 'foundry'
+  scope: rg
+  params: {
+    name: '${abbrs.cognitiveServicesAccounts}${resourceToken}'
+    location: location
+    tags: tags
   }
 }
 

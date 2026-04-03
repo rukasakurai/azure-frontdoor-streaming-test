@@ -1,6 +1,6 @@
 # Azure Front Door Streaming Test
 
-A minimal test harness to verify whether **Azure Front Door (Premium)** buffers or passes through streaming HTTP responses (SSE and NDJSON).
+A minimal test harness to verify whether **Azure Front Door (Premium)** buffers or passes through streaming HTTP responses (SSE and NDJSON), including real **Microsoft Foundry** agent streams.
 
 ## Architecture
 
@@ -11,12 +11,16 @@ flowchart LR
     AFD --> AppService
     AppService --> SSE["/sse – SSE stream"]
     AppService --> NDJSON["/ndjson – NDJSON stream"]
+    AppService --> SSEAgent["/sse-agent – Foundry SSE stream"]
     AppService --> Health["/health – health probe"]
+    SSEAgent -->|streaming proxy| Foundry["Microsoft Foundry\n(AIServices)"]
 ```
 
 ## Purpose
 
-Azure Front Door is a global load-balancer/CDN. There is uncertainty about whether it buffers long-lived streaming responses (SSE, NDJSON) before forwarding them to clients. This repo deploys a Node.js server with two streaming endpoints, exposes them both directly and via AFD, and provides a shell script to measure per-chunk arrival times and detect buffering.
+Azure Front Door is a global load-balancer/CDN. There is uncertainty about whether it buffers long-lived streaming responses (SSE, NDJSON) before forwarding them to clients. This repo deploys a Node.js server with streaming endpoints, exposes them both directly and via AFD, and provides a shell script to measure per-chunk arrival times and detect buffering.
+
+The `/sse` and `/ndjson` endpoints use fixed-interval mock data, while `/sse-agent` calls an actual **Microsoft Foundry** model deployment to test streaming with realistic AI inference characteristics (irregular timing, variable chunk sizes, model-speed token delivery).
 
 ## Prerequisites
 
@@ -41,6 +45,7 @@ azd up
 - App Service Plan (Linux B1)
 - App Service (Node.js 20 LTS) with the Fastify server
 - Azure Front Door Premium profile with a route forwarding `/*` to the App Service
+- Microsoft Foundry account (AIServices) with a `gpt-4o-mini` model deployment
 
 It prints the `SERVICE_APP_URI` (direct URL) and `AFD_URI` at the end.
 
@@ -59,7 +64,7 @@ Example:
   https://streaming-test-abc123.z01.azurefd.net
 ```
 
-The script tests `/sse` and `/ndjson` against both URLs and prints a per-chunk timing table, then concludes with **PASS** or **FAIL**.
+The script tests `/sse`, `/ndjson`, and `/sse-agent` against both URLs and prints a per-chunk timing table, then concludes with **PASS** or **FAIL**. The `/sse-agent` test is automatically skipped if Microsoft Foundry is not configured.
 
 ### 3. Tear down
 
@@ -73,6 +78,7 @@ azd down
 |----------|-------------|-------------|
 | `GET /sse` | `text/event-stream` | Sends 10 SSE events at 1-second intervals |
 | `GET /ndjson` | `application/x-ndjson` | Sends 10 JSON lines at 1-second intervals |
+| `GET /sse-agent` | `text/event-stream` | Proxies a streaming chat completion from Microsoft Foundry |
 | `GET /health` | `application/json` | Returns `{"status":"ok"}` – used by AFD health probe |
 
 ## Test Script Behaviour
@@ -116,6 +122,44 @@ Test locally:
 curl -N http://localhost:3000/sse
 curl -N http://localhost:3000/ndjson
 ```
+
+## Azure Resources
+
+This project provisions the following Azure resources:
+
+| Resource | Type | Purpose |
+|----------|------|---------|
+| Resource Group | `Microsoft.Resources/resourceGroups` | Container for all resources |
+| App Service Plan | `Microsoft.Web/serverfarms` | Linux B1 hosting plan |
+| App Service | `Microsoft.Web/sites` | Node.js 20 LTS Fastify server |
+| Azure Front Door | `Microsoft.Cdn/profiles` | Premium CDN/load-balancer |
+| Microsoft Foundry | `Microsoft.CognitiveServices/accounts` (kind: `AIServices`) | AI model hosting |
+| Model Deployment | `Microsoft.CognitiveServices/accounts/deployments` | `gpt-4o-mini` for streaming chat |
+
+### Microsoft Foundry Configuration
+
+The App Service receives three environment variables from the Foundry deployment:
+
+| Variable | Description |
+|----------|-------------|
+| `FOUNDRY_ENDPOINT` | Cognitive Services account endpoint URL |
+| `FOUNDRY_API_KEY` | API key for authentication |
+| `FOUNDRY_DEPLOYMENT_NAME` | Name of the deployed model (default: `gpt-4o-mini`) |
+
+The `/sse-agent` endpoint returns HTTP 503 when these variables are not configured, and `test.sh` automatically skips the agent test in that case.
+
+## Technology Reference
+
+> ⚠️ **Important:** Microsoft Foundry and Azure AI Foundry are **not interchangeable** and use **different ARM resource providers**.
+
+| Technology | ARM Resource Type |
+|-----------|-------------------|
+| **Microsoft Foundry** (this repo) | `Microsoft.CognitiveServices/accounts` (kind: `AIServices`) |
+| **Model Deployments** (this repo) | `Microsoft.CognitiveServices/accounts/deployments` |
+| Azure AI Foundry (Hub) | `Microsoft.MachineLearningServices/workspaces` (kind: `Hub`) |
+| Azure AI Foundry (Project) | `Microsoft.MachineLearningServices/workspaces` (kind: `Project`) |
+
+This repository uses **Microsoft Foundry** (`Microsoft.CognitiveServices`) exclusively.
 
 ## License
 

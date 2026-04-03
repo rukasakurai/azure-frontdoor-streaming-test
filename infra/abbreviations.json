@@ -2,5 +2,6 @@
   "resourcesResourceGroups": "rg-",
   "webServerFarms": "asp-",
   "webSitesAppService": "app-",
-  "networkFrontDoors": "afd-"
+  "networkFrontDoors": "afd-",
+  "cognitiveServicesAccounts": "cog-"
 }

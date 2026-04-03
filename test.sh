@@ -34,7 +34,7 @@ stream_timestamps() {
   t0="$(date +%s%N)"   # nanoseconds
 
   # Stream with curl; write each chunk to a temp file, flushing line by line
-  curl -sS -N --max-time 30 "$url" 2>/dev/null | while IFS= read -r line; do
+  curl -sS -N --max-time 120 "$url" 2>/dev/null | while IFS= read -r line; do
     # Skip empty lines and SSE comment/field prefixes that carry no data
     [[ -z "$line" ]] && continue
     local tnow
@@ -119,6 +119,19 @@ echo " Threshold  : ${THRESHOLD_SECONDS}s per-chunk lag"
 
 run_test "/sse"
 run_test "/ndjson"
+
+# Test the /sse-agent endpoint if Microsoft Foundry is configured.
+# The endpoint returns HTTP 503 when Foundry env vars are not set.
+agent_status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "${DIRECT_URL%/}/sse-agent" 2>/dev/null || echo "000")
+if [[ "$agent_status" != "503" && "$agent_status" != "000" ]]; then
+  run_test "/sse-agent"
+else
+  echo ""
+  echo "════════════════════════════════════════════════════════"
+  echo " Endpoint : /sse-agent"
+  echo "════════════════════════════════════════════════════════"
+  echo " SKIPPED – Microsoft Foundry not configured (HTTP $agent_status)"
+fi
 
 echo ""
 echo "────────────────────────────────────────────────────────────"
