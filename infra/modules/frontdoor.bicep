@@ -75,6 +75,7 @@ resource route 'Microsoft.Cdn/profiles/afdEndpoints/routes@2024-09-01' = {
   name: routeName
   dependsOn: [origin]
   properties: {
+    enabledState: 'Enabled'
     originGroup: {
       id: originGroup.id
     }
@@ -83,41 +84,6 @@ resource route 'Microsoft.Cdn/profiles/afdEndpoints/routes@2024-09-01' = {
     forwardingProtocol: 'HttpsOnly'
     linkToDefaultDomain: 'Enabled'
     httpsRedirect: 'Enabled'
-    originPath: '/'
-    ruleSets: [
-      {
-        id: ruleSet.id
-      }
-    ]
-  }
-}
-
-// Rule set: disable caching and set origin response timeout to 240 s (maximum)
-resource ruleSet 'Microsoft.Cdn/profiles/ruleSets@2024-09-01' = {
-  parent: afdProfile
-  name: 'streamingRules'
-}
-
-resource originTimeoutRule 'Microsoft.Cdn/profiles/ruleSets/rules@2024-09-01' = {
-  parent: ruleSet
-  name: 'setOriginTimeout'
-  properties: {
-    order: 1
-    conditions: []
-    actions: [
-      {
-        name: 'RouteConfigurationOverride'
-        parameters: {
-          typeName: 'DeliveryRuleRouteConfigurationOverrideActionParameters'
-          originGroupOverride: {
-            originGroup: {
-              id: originGroup.id
-            }
-            forwardingProtocol: 'HttpsOnly'
-          }
-        }
-      }
-    ]
   }
 }
 

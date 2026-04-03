@@ -65,8 +65,26 @@ jobs:
           azd env set AZURE_LOCATION "$AZD_LOCATION"
           azd env set AZURE_SUBSCRIPTION_ID "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
 
-      - name: Deploy infrastructure (azd up)
-        run: azd up --no-prompt
+      - name: Provision infrastructure (azd provision)
+        run: azd provision --no-prompt
+
+      - name: Deploy application (azd deploy with retries)
+        run: |
+          MAX_RETRIES=5
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "=== azd deploy attempt $i/$MAX_RETRIES ==="
+            if azd deploy; then
+              echo "azd deploy succeeded on attempt $i"
+              break
+            fi
+            if [ "$i" -eq "$MAX_RETRIES" ]; then
+              echo "::error::azd deploy failed after $MAX_RETRIES attempts"
+              exit 1
+            fi
+            WAIT=$((i * 30))
+            echo "::warning::azd deploy failed (attempt $i/$MAX_RETRIES). Retrying in ${WAIT}s..."
+            sleep "$WAIT"
+          done
 
       - name: Extract deployment URLs
         id: urls
@@ -78,21 +96,46 @@ jobs:
           echo "Direct URL: $SERVICE_APP_URI"
           echo "AFD URL: $AFD_URI"
 
+      - name: Verify origin health before waiting for AFD
+        run: |
+          echo "Checking origin App Service health..."
+          for i in $(seq 1 12); do
+            status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${{ steps.urls.outputs.direct_url }}/health" || echo "000")
+            echo "Origin attempt $i/12 – HTTP $status"
+            if [ "$status" = "200" ]; then
+              echo "Origin is healthy"
+              break
+            fi
+            if [ "$i" = "12" ]; then
+              echo "::warning::Origin did not return 200 after 12 attempts – AFD may also fail"
+            fi
+            sleep 5
+          done
+
       - name: Wait for Front Door endpoint to become ready
         run: |
-          echo "Waiting for AFD endpoint to respond..."
+          AFD_HEALTH="${{ steps.urls.outputs.afd_url }}/health"
+          MAX_ATTEMPTS=90
+          WAIT_INTERVAL=20
+          echo "Waiting for AFD endpoint to respond at $AFD_HEALTH (up to $((MAX_ATTEMPTS * WAIT_INTERVAL / 60)) min)..."
           ready=false
-          for i in $(seq 1 30); do
-            if curl -sf --max-time 10 "${{ steps.urls.outputs.afd_url }}/health" > /dev/null 2>&1; then
-              echo "AFD endpoint is ready"
+          for i in $(seq 1 $MAX_ATTEMPTS); do
+            status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$AFD_HEALTH" || echo "000")
+            if [ "$status" = "200" ]; then
+              echo "Attempt $i/$MAX_ATTEMPTS – HTTP $status – AFD endpoint is ready"
               ready=true
               break
             fi
-            echo "Attempt $i/30 – waiting 10s..."
-            sleep 10
+            echo "Attempt $i/$MAX_ATTEMPTS – HTTP $status – waiting ${WAIT_INTERVAL}s..."
+            sleep "$WAIT_INTERVAL"
           done
           if [ "$ready" != "true" ]; then
-            echo "::error::AFD endpoint did not become ready after 30 attempts"
+            echo "::error::AFD endpoint did not become ready after $MAX_ATTEMPTS attempts (~$((MAX_ATTEMPTS * WAIT_INTERVAL / 60)) min)"
+            echo "--- Final diagnostic: verbose curl ---"
+            curl -sv --max-time 15 "$AFD_HEALTH" 2>&1 || true
+            echo "--- DNS lookup ---"
+            AFD_HOST=$(echo "$AFD_HEALTH" | sed 's|https://||;s|/.*||')
+            nslookup "$AFD_HOST" 2>&1 || true
             exit 1
           fi
 
