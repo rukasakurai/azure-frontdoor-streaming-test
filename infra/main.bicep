@@ -47,6 +47,7 @@ module frontDoor './modules/frontdoor.bicep' = {
     name: '${abbrs.networkFrontDoors}${resourceToken}'
     tags: tags
     originHostName: appService.outputs.defaultHostName
+    resourceToken: resourceToken
   }
 }
 

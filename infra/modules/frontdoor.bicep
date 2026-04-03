@@ -7,9 +7,12 @@ param tags object = {}
 @description('Hostname of the origin App Service (without https://).')
 param originHostName string
 
+@description('Unique token used to avoid resource-name collisions (e.g. uniqueString output).')
+param resourceToken string
+
 var originGroupName = 'app-origin-group'
 var originName = 'app-origin'
-var endpointName = 'streaming-test'
+var endpointName = 'ep-${resourceToken}'
 var routeName = 'default-route'
 
 resource afdProfile 'Microsoft.Cdn/profiles@2024-09-01' = {
