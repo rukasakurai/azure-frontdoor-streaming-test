@@ -78,21 +78,45 @@ jobs:
           echo "Direct URL: $SERVICE_APP_URI"
           echo "AFD URL: $AFD_URI"
 
+      - name: Verify origin health before waiting for AFD
+        run: |
+          echo "Checking origin App Service health..."
+          for i in $(seq 1 12); do
+            status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${{ steps.urls.outputs.direct_url }}/health" || echo "000")
+            echo "Origin attempt $i/12 – HTTP $status"
+            if [ "$status" = "200" ]; then
+              echo "Origin is healthy"
+              break
+            fi
+            if [ "$i" = "12" ]; then
+              echo "::warning::Origin did not return 200 after 12 attempts – AFD may also fail"
+            fi
+            sleep 5
+          done
+
       - name: Wait for Front Door endpoint to become ready
         run: |
-          echo "Waiting for AFD endpoint to respond..."
+          AFD_HEALTH="${{ steps.urls.outputs.afd_url }}/health"
+          MAX_ATTEMPTS=60
+          echo "Waiting for AFD endpoint to respond at $AFD_HEALTH ..."
           ready=false
-          for i in $(seq 1 30); do
-            if curl -sf --max-time 10 "${{ steps.urls.outputs.afd_url }}/health" > /dev/null 2>&1; then
-              echo "AFD endpoint is ready"
+          for i in $(seq 1 $MAX_ATTEMPTS); do
+            status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$AFD_HEALTH" || echo "000")
+            if [ "$status" = "200" ]; then
+              echo "Attempt $i/$MAX_ATTEMPTS – HTTP $status – AFD endpoint is ready"
               ready=true
               break
             fi
-            echo "Attempt $i/30 – waiting 10s..."
+            echo "Attempt $i/$MAX_ATTEMPTS – HTTP $status – waiting 10s..."
             sleep 10
           done
           if [ "$ready" != "true" ]; then
-            echo "::error::AFD endpoint did not become ready after 30 attempts"
+            echo "::error::AFD endpoint did not become ready after $MAX_ATTEMPTS attempts"
+            echo "--- Final diagnostic: verbose curl ---"
+            curl -sv --max-time 10 "$AFD_HEALTH" 2>&1 || true
+            echo "--- DNS lookup ---"
+            AFD_HOST=$(echo "$AFD_HEALTH" | sed 's|https://||;s|/.*||')
+            nslookup "$AFD_HOST" 2>&1 || true
             exit 1
           fi
 

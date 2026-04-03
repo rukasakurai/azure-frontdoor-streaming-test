@@ -81,3 +81,39 @@ afdProfile
 | Splitting AFD deployment into two Bicep modules (profile + children, then route) | Adds complexity; explicit `dependsOn` is the simpler and standard approach |
 | Adding a random suffix to the endpoint name | The endpoint name already uses `uniqueString`; the Conflict error was a cascading failure, not a true naming collision |
 | Removing `originPath: '/'` from the route | Valid configuration; not related to the root cause |
+
+---
+
+## 2026-04-03 – AFD Endpoint Not Ready Within Wait Timeout
+
+### Symptoms
+
+After the provisioning race condition was fixed (see above), `azd up --no-prompt` completed successfully. However, the next E2E step — "Wait for Front Door endpoint to become ready" — timed out after 30 attempts × 10 seconds (~5 minutes):
+
+```
+::error::AFD endpoint did not become ready after 30 attempts
+```
+
+The `curl -sf` probe to `https://<afd-endpoint>/health` silently failed every attempt with no diagnostic output, making root cause analysis difficult.
+
+### Root Cause Analysis
+
+Azure Front Door Premium endpoints can take **5–15 minutes** to become fully routable after provisioning completes. The original wait script had only a 5-minute budget (30 × 10s), which is at the low end of the propagation window. Additionally:
+
+- `curl -sf` suppresses all output on failure, so there was no way to distinguish DNS failure, TLS errors, HTTP 404/503, or network timeouts.
+- The script did not verify that the origin App Service itself was healthy before waiting on AFD.
+
+### Fix Applied
+
+In `.github/workflows/e2e-test.yml`:
+
+1. **Added a "Verify origin health" step** — checks that the backend App Service returns HTTP 200 on `/health` before waiting for AFD, so backend issues are caught early.
+2. **Increased AFD wait budget to ~10 minutes** (60 attempts × 10s) to accommodate typical AFD propagation times.
+3. **Log HTTP status code on every attempt** — replaced silent `curl -sf` with `curl -s -o /dev/null -w '%{http_code}'` so each attempt shows the actual HTTP response.
+4. **Added failure diagnostics** — on final failure, the script now runs `curl -sv` (verbose) and `nslookup` to capture TLS handshake details, response headers, and DNS resolution for debugging.
+
+### Outcome
+
+- Provisioning succeeds (confirmed by E2E run on `copilot/bug-fix-deployment-errors` branch).
+- The improved wait step provides actionable diagnostic output if AFD propagation is still slow.
+
