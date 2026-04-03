@@ -7,7 +7,7 @@ param location string
 @description('Resource tags.')
 param tags object = {}
 
-resource appServicePlan 'Microsoft.Web/serverfarms@2022-09-01' = {
+resource appServicePlan 'Microsoft.Web/serverfarms@2024-04-01' = {
   name: name
   location: location
   tags: tags
