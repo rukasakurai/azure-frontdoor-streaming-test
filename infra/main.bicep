@@ -1,0 +1,57 @@
+targetScope = 'subscription'
+
+@minLength(1)
+@maxLength(64)
+@description('Name of the environment (used to name resources).')
+param environmentName string
+
+@minLength(1)
+@description('Primary location for all resources.')
+param location string
+
+var abbrs = loadJsonContent('./abbreviations.json')
+var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
+var tags = { 'azd-env-name': environmentName }
+
+resource rg 'Microsoft.Resources/resourceGroups@2022-09-01' = {
+  name: '${abbrs.resourcesResourceGroups}${environmentName}'
+  location: location
+  tags: tags
+}
+
+module appServicePlan './modules/appserviceplan.bicep' = {
+  name: 'appserviceplan'
+  scope: rg
+  params: {
+    name: '${abbrs.webServerFarms}${resourceToken}'
+    location: location
+    tags: tags
+  }
+}
+
+module appService './modules/appservice.bicep' = {
+  name: 'appservice'
+  scope: rg
+  params: {
+    name: '${abbrs.webSitesAppService}${resourceToken}'
+    location: location
+    tags: tags
+    appServicePlanId: appServicePlan.outputs.id
+  }
+}
+
+module frontDoor './modules/frontdoor.bicep' = {
+  name: 'frontdoor'
+  scope: rg
+  params: {
+    name: '${abbrs.networkFrontDoors}${resourceToken}'
+    tags: tags
+    originHostName: appService.outputs.defaultHostName
+  }
+}
+
+output AZURE_LOCATION string = location
+output AZURE_TENANT_ID string = tenant().tenantId
+output SERVICE_APP_NAME string = appService.outputs.name
+output SERVICE_APP_URI string = 'https://${appService.outputs.defaultHostName}'
+output AFD_URI string = 'https://${frontDoor.outputs.endpointHostName}'

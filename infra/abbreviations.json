@@ -1,0 +1,6 @@
+{
+  "resourcesResourceGroups": "rg-",
+  "webServerFarms": "asp-",
+  "webSitesAppService": "app-",
+  "networkFrontDoors": "afd-"
+}
