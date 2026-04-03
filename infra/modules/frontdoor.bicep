@@ -12,7 +12,7 @@ var originName = 'app-origin'
 var endpointName = 'streaming-test'
 var routeName = 'default-route'
 
-resource afdProfile 'Microsoft.Cdn/profiles@2023-05-01' = {
+resource afdProfile 'Microsoft.Cdn/profiles@2024-02-01' = {
   name: name
   location: 'global'
   tags: tags
@@ -24,7 +24,7 @@ resource afdProfile 'Microsoft.Cdn/profiles@2023-05-01' = {
   }
 }
 
-resource originGroup 'Microsoft.Cdn/profiles/originGroups@2023-05-01' = {
+resource originGroup 'Microsoft.Cdn/profiles/originGroups@2024-02-01' = {
   parent: afdProfile
   name: originGroupName
   properties: {
@@ -43,7 +43,7 @@ resource originGroup 'Microsoft.Cdn/profiles/originGroups@2023-05-01' = {
   }
 }
 
-resource origin 'Microsoft.Cdn/profiles/originGroups/origins@2023-05-01' = {
+resource origin 'Microsoft.Cdn/profiles/originGroups/origins@2024-02-01' = {
   parent: originGroup
   name: originName
   properties: {
@@ -58,7 +58,7 @@ resource origin 'Microsoft.Cdn/profiles/originGroups/origins@2023-05-01' = {
   }
 }
 
-resource endpoint 'Microsoft.Cdn/profiles/afdEndpoints@2023-05-01' = {
+resource endpoint 'Microsoft.Cdn/profiles/afdEndpoints@2024-02-01' = {
   parent: afdProfile
   name: endpointName
   location: 'global'
@@ -67,7 +67,7 @@ resource endpoint 'Microsoft.Cdn/profiles/afdEndpoints@2023-05-01' = {
   }
 }
 
-resource route 'Microsoft.Cdn/profiles/afdEndpoints/routes@2023-05-01' = {
+resource route 'Microsoft.Cdn/profiles/afdEndpoints/routes@2024-02-01' = {
   parent: endpoint
   name: routeName
   dependsOn: [origin]
@@ -90,7 +90,7 @@ resource route 'Microsoft.Cdn/profiles/afdEndpoints/routes@2023-05-01' = {
 }
 
 // Rule set: disable caching and set origin response timeout to 240 s (maximum)
-resource ruleSet 'Microsoft.Cdn/profiles/ruleSets@2023-05-01' = {
+resource ruleSet 'Microsoft.Cdn/profiles/ruleSets@2024-02-01' = {
   parent: afdProfile
   name: 'streamingRules'
 }
@@ -113,7 +113,7 @@ resource originTimeoutRule 'Microsoft.Cdn/profiles/ruleSets/rules@2024-02-01' = 
             forwardingProtocol: 'HttpsOnly'
           }
           cacheConfiguration: {
-            cacheType: 'NoCache'
+            cacheBehavior: 'BypassCaching'
           }
         }
       }

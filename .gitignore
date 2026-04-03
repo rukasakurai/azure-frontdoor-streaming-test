@@ -12,6 +12,7 @@ yarn-error.log*
 # Build output
 dist/
 build/
+infra/main.json
 
 # Environment files
 .env
