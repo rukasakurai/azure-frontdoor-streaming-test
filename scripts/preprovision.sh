@@ -9,8 +9,9 @@ set -euo pipefail
 #   AZURE_ENV_NAME          – azd environment name              (required)
 #   AZURE_LOCATION          – Azure region                      (required)
 #   AZURE_SUBSCRIPTION_ID   – Azure subscription                (optional; uses az default)
-#   PREPROVISION_RG_TAGS    – JSON object of extra tags          (optional)
-#                             Example: '{"team":"platform","cost-center":"12345"}'
+#   PREPROVISION_RG_TAGS    – Space-separated key=value tags     (optional)
+#                             Example: 'team=platform cost-center=12345'
+#                             Single tag:  'team=platform'
 
 : "${AZURE_ENV_NAME:?AZURE_ENV_NAME is required}"
 : "${AZURE_LOCATION:?AZURE_LOCATION is required}"
@@ -27,18 +28,19 @@ if [ -n "${AZURE_SUBSCRIPTION_ID:-}" ]; then
 fi
 
 # Collect tags: always include the azd-env-name tag (matches the Bicep
-# template convention), then merge any custom tags from the secret.
+# template convention), then append any custom tags from the env var.
 args+=(--tags "azd-env-name=${AZURE_ENV_NAME}")
 
 if [ -n "${PREPROVISION_RG_TAGS:-}" ]; then
   echo "Applying custom tags from PREPROVISION_RG_TAGS..."
-  if echo "$PREPROVISION_RG_TAGS" | jq empty 2>/dev/null; then
-    while IFS= read -r tag; do
-      [ -n "$tag" ] && args+=("$tag")
-    done < <(echo "$PREPROVISION_RG_TAGS" | jq -r 'to_entries[] | "\(.key)=\(.value)"')
-  else
-    echo "::warning::PREPROVISION_RG_TAGS is not valid JSON — skipping custom tags"
-  fi
+  # shellcheck disable=SC2086
+  # Word-splitting is intentional: each key=value pair becomes a separate arg.
+  # Disable globbing so wildcards in values are not expanded.
+  set -f
+  for tag in $PREPROVISION_RG_TAGS; do
+    args+=("$tag")
+  done
+  set +f
 fi
 
 az group create "${args[@]}"

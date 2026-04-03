@@ -45,10 +45,15 @@ creates the target resource group with an optional set of custom tags. This is
 useful when Azure Policy requires specific tags at resource-group creation time.
 
 To apply custom tags, set the `PREPROVISION_RG_TAGS` environment variable (or
-GitHub repository secret) to a JSON object:
+GitHub repository secret) to one or more space-separated `key=value` pairs:
 
 ```bash
-export PREPROVISION_RG_TAGS='{"team":"platform","cost-center":"12345"}'
+# Single tag
+export PREPROVISION_RG_TAGS='team=platform'
+azd up
+
+# Multiple tags
+export PREPROVISION_RG_TAGS='team=platform cost-center=12345'
 azd up
 ```
 
@@ -167,11 +172,11 @@ The `/sse-agent` endpoint returns HTTP 503 when these variables are not configur
 
 The `e2e-test` and `azd-manage` workflows pass the `PREPROVISION_RG_TAGS`
 repository secret to the `preprovision` hook. To apply custom tags during CI/CD
-provisioning, add a repository secret named `PREPROVISION_RG_TAGS` containing a
-JSON object:
+provisioning, add a repository secret named `PREPROVISION_RG_TAGS` containing
+space-separated `key=value` pairs:
 
-```json
-{"team":"platform","cost-center":"12345"}
+```
+team=platform cost-center=12345
 ```
 
 If the secret is not configured, the resource group is created with only the
