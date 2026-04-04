@@ -66,12 +66,13 @@ jobs:
           azd env set AZURE_SUBSCRIPTION_ID "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
 
       - name: Set custom resource tag
-        if: env.PREPROVISION_RG_TAG != ''
+        if: env.RG_TAG_NAME != ''
         run: |
-          azd env set customTagName "${PREPROVISION_RG_TAG%%=*}"
-          azd env set customTagValue "${PREPROVISION_RG_TAG#*=}"
+          azd env set rgTagName "$RG_TAG_NAME"
+          azd env set rgTagValue "$RG_TAG_VALUE"
         env:
-          PREPROVISION_RG_TAG: ${{ secrets.PREPROVISION_RG_TAG }}
+          RG_TAG_NAME: ${{ secrets.RG_TAG_NAME }}
+          RG_TAG_VALUE: ${{ secrets.RG_TAG_VALUE }}
 
       - name: Provision infrastructure (azd provision)
         run: azd provision --no-prompt

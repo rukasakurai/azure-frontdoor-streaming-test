@@ -42,13 +42,11 @@ azd up
 
 ### Custom Resource Tags
 
-To apply a custom tag to all provisioned resources, parse a `key=value` pair
-into the two azd parameters before running `azd up`:
+To apply a custom tag to all provisioned resources:
 
 ```bash
-export PREPROVISION_RG_TAG='team=platform'
-azd env set customTagName "${PREPROVISION_RG_TAG%%=*}"
-azd env set customTagValue "${PREPROVISION_RG_TAG#*=}"
+azd env set rgTagName "team"
+azd env set rgTagValue "platform"
 azd up
 ```
 
@@ -165,10 +163,10 @@ The `/sse-agent` endpoint returns HTTP 503 when these variables are not configur
 
 ### Resource Group Tags (CI/CD)
 
-The `e2e-test` and `azd-manage` workflows read the `PREPROVISION_RG_TAG`
-repository secret (format: `key=value`) and convert it to the `customTags`
-Bicep parameter automatically. If the secret is not configured, resources are
-created with only the default `azd-env-name` tag.
+The `e2e-test` and `azd-manage` workflows read the `RG_TAG_NAME` and
+`RG_TAG_VALUE` repository secrets and set them as azd parameters
+automatically. If the secrets are not configured, resources are created with
+only the default `azd-env-name` tag.
 
 ## Technology Reference
 

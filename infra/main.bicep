@@ -10,15 +10,15 @@ param environmentName string
 param location string
 
 @description('Custom tag name to apply to all resources (leave empty to skip).')
-param customTagName string = ''
+param rgTagName string = ''
 
-@description('Custom tag value (used when customTagName is set).')
-param customTagValue string = ''
+@description('Custom tag value (used when rgTagName is set).')
+param rgTagValue string = ''
 
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var baseTags = { 'azd-env-name': environmentName }
-var tags = customTagName != '' ? union(baseTags, { '${customTagName}': customTagValue }) : baseTags
+var tags = rgTagName != '' ? union(baseTags, { '${rgTagName}': rgTagValue }) : baseTags
 
 resource rg 'Microsoft.Resources/resourceGroups@2024-11-01' = {
   name: '${abbrs.resourcesResourceGroups}${environmentName}'
