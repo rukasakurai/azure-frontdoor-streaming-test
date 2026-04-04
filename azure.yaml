@@ -2,11 +2,6 @@ name: azure-frontdoor-streaming-test
 metadata:
   template: azure-frontdoor-streaming-test@0.0.1
 
-hooks:
-  preprovision:
-    shell: sh
-    run: ./scripts/preprovision.sh
-
 services:
   app:
     project: ./app

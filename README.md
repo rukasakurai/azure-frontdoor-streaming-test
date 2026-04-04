@@ -40,25 +40,20 @@ The `/sse` and `/ndjson` endpoints use fixed-interval mock data, while `/sse-age
 azd up
 ```
 
-Before provisioning, the `preprovision` hook (`scripts/preprovision.sh`) automatically
-creates the target resource group with an optional set of custom tags. This is
-useful when Azure Policy requires specific tags at resource-group creation time.
+### Custom Resource Tags
 
-To apply custom tags, set the `PREPROVISION_RG_TAGS` environment variable (or
-GitHub repository secret) to one or more space-separated `key=value` pairs:
+To apply a custom tag to all provisioned resources, parse a `key=value` pair
+into the two azd parameters before running `azd up`:
 
 ```bash
-# Single tag
-export PREPROVISION_RG_TAGS='team=platform'
-azd up
-
-# Multiple tags
-export PREPROVISION_RG_TAGS='team=platform cost-center=12345'
+TAG='team=platform'
+azd env set customTagName "${TAG%%=*}"
+azd env set customTagValue "${TAG#*=}"
 azd up
 ```
 
-If `PREPROVISION_RG_TAGS` is unset or empty, the resource group is created with
-only the default `azd-env-name` tag.
+If no custom tag is set, resources are created with only the default
+`azd-env-name` tag.
 
 `azd up` provisions:
 - Resource group
@@ -170,17 +165,10 @@ The `/sse-agent` endpoint returns HTTP 503 when these variables are not configur
 
 ### Resource Group Tags (CI/CD)
 
-The `e2e-test` and `azd-manage` workflows pass the `PREPROVISION_RG_TAGS`
-repository secret to the `preprovision` hook. To apply custom tags during CI/CD
-provisioning, add a repository secret named `PREPROVISION_RG_TAGS` containing
-space-separated `key=value` pairs:
-
-```
-team=platform cost-center=12345
-```
-
-If the secret is not configured, the resource group is created with only the
-default `azd-env-name` tag.
+The `e2e-test` and `azd-manage` workflows read the `PREPROVISION_RG_TAG`
+repository secret (format: `key=value`) and convert it to the `customTags`
+Bicep parameter automatically. If the secret is not configured, resources are
+created with only the default `azd-env-name` tag.
 
 ## Technology Reference
 
