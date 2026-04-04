@@ -1,5 +1,3 @@
-targetScope = 'subscription'
-
 @minLength(1)
 @maxLength(64)
 @description('Name of the environment (used to name resources).')
@@ -9,26 +7,12 @@ param environmentName string
 @description('Primary location for all resources.')
 param location string
 
-@description('Custom tag name to apply to all resources (leave empty to skip).')
-param rgTagName string = ''
-
-@description('Custom tag value (used when rgTagName is set).')
-param rgTagValue string = ''
-
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
-var baseTags = { 'azd-env-name': environmentName }
-var tags = rgTagName != '' ? union(baseTags, { '${rgTagName}': rgTagValue }) : baseTags
-
-resource rg 'Microsoft.Resources/resourceGroups@2024-11-01' = {
-  name: '${abbrs.resourcesResourceGroups}${environmentName}'
-  location: location
-  tags: tags
-}
+var tags = { 'azd-env-name': environmentName }
 
 module appServicePlan './modules/appserviceplan.bicep' = {
   name: 'appserviceplan'
-  scope: rg
   params: {
     name: '${abbrs.webServerFarms}${resourceToken}'
     location: location
@@ -38,7 +22,6 @@ module appServicePlan './modules/appserviceplan.bicep' = {
 
 module appService './modules/appservice.bicep' = {
   name: 'appservice'
-  scope: rg
   params: {
     name: '${abbrs.webSitesAppService}${resourceToken}'
     location: location
@@ -52,7 +35,6 @@ module appService './modules/appservice.bicep' = {
 
 module foundry './modules/foundry.bicep' = {
   name: 'foundry'
-  scope: rg
   params: {
     name: '${abbrs.cognitiveServicesAccounts}${resourceToken}'
     location: location
@@ -62,7 +44,6 @@ module foundry './modules/foundry.bicep' = {
 
 module frontDoor './modules/frontdoor.bicep' = {
   name: 'frontdoor'
-  scope: rg
   params: {
     name: '${abbrs.networkFrontDoors}${resourceToken}'
     tags: tags

@@ -34,24 +34,21 @@ The `/sse` and `/ndjson` endpoints use fixed-interval mock data, while `/sse-age
 
 ## Quick Start
 
-### 1. Deploy infrastructure
+### 1. Create the resource group
+
+```bash
+az group create -n rg-myenv -l japaneast --tags "<key>=<value>"
+```
+
+### 2. Deploy infrastructure
 
 ```bash
 azd up
 ```
 
-### Custom Resource Tags
-
-To apply a custom tag to all provisioned resources:
-
-```bash
-azd env set rgTagName "team"
-azd env set rgTagValue "platform"
-azd up
-```
-
-If no custom tag is set, resources are created with only the default
-`azd-env-name` tag.
+Tags are set on the resource group via `az group create --tags` before
+running `azd up`. Bicep references the existing resource group without
+modifying its tags.
 
 `azd up` provisions:
 - Resource group
@@ -163,10 +160,10 @@ The `/sse-agent` endpoint returns HTTP 503 when these variables are not configur
 
 ### Resource Group Tags (CI/CD)
 
-The `e2e-test` and `azd-manage` workflows read the `RG_TAG_NAME` and
-`RG_TAG_VALUE` repository secrets and set them as azd parameters
-automatically. If the secrets are not configured, resources are created with
-only the default `azd-env-name` tag.
+The `e2e-test` and `azd-manage` workflows create the resource group with
+`az group create --tags` before running `azd`. They read the `RG_TAG_NAME`
+and `RG_TAG_VALUE` repository secrets to apply a custom tag. If the secrets
+are not configured, the resource group is created without custom tags.
 
 ## Technology Reference
 

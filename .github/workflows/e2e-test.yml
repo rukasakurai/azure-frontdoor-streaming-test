@@ -64,12 +64,15 @@ jobs:
           azd env select "$AZD_ENVIRONMENT"
           azd env set AZURE_LOCATION "$AZD_LOCATION"
           azd env set AZURE_SUBSCRIPTION_ID "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+          azd env set AZURE_RESOURCE_GROUP "rg-$AZD_ENVIRONMENT"
 
-      - name: Set custom resource tag
-        if: env.RG_TAG_NAME != ''
+      - name: Create resource group
         run: |
-          azd env set rgTagName "$RG_TAG_NAME"
-          azd env set rgTagValue "$RG_TAG_VALUE"
+          args=(-n "rg-$AZD_ENVIRONMENT" -l "$AZD_LOCATION")
+          if [ -n "$RG_TAG_NAME" ]; then
+            args+=(--tags "$RG_TAG_NAME=$RG_TAG_VALUE")
+          fi
+          az group create "${args[@]}"
         env:
           RG_TAG_NAME: ${{ secrets.RG_TAG_NAME }}
           RG_TAG_VALUE: ${{ secrets.RG_TAG_VALUE }}
