@@ -11,16 +11,17 @@ on:
           - up
           - down
       environment:
-        description: "azd environment name (defaults to a unique value per run)"
+        description: "azd environment name"
         required: false
         type: string
+        default: "afd-streaming-gha"
 
 permissions:
   id-token: write
   contents: read
 
 env:
-  AZD_ENVIRONMENT: ${{ inputs.environment || format('gha-{0}-{1}', github.run_id, github.run_attempt) }}
+  AZD_ENVIRONMENT: ${{ inputs.environment || 'afd-streaming-gha' }}
   AZD_LOCATION: japaneast
 
 jobs:
