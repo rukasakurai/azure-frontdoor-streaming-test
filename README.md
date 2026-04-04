@@ -46,9 +46,9 @@ To apply a custom tag to all provisioned resources, parse a `key=value` pair
 into the two azd parameters before running `azd up`:
 
 ```bash
-TAG='team=platform'
-azd env set customTagName "${TAG%%=*}"
-azd env set customTagValue "${TAG#*=}"
+export PREPROVISION_RG_TAG='team=platform'
+azd env set customTagName "${PREPROVISION_RG_TAG%%=*}"
+azd env set customTagValue "${PREPROVISION_RG_TAG#*=}"
 azd up
 ```
 
