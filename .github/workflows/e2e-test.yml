@@ -58,7 +58,26 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Authenticate azd with federated credential
-        run: azd auth login --client-id "${{ vars.AZURE_CLIENT_ID }}" --federated-credential-provider github --tenant-id "${{ secrets.AZURE_TENANT_ID }}"
+        run: |
+          MAX_RETRIES=4
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "=== azd auth login attempt $i/$MAX_RETRIES ==="
+            if azd auth login --client-id "${{ vars.AZURE_CLIENT_ID }}" --federated-credential-provider github --tenant-id "${{ secrets.AZURE_TENANT_ID }}"; then
+              echo "azd auth login succeeded on attempt $i"
+              break
+            fi
+            if [ "$i" -eq "$MAX_RETRIES" ]; then
+              echo "::error::azd auth login failed after $MAX_RETRIES attempts"
+              exit 1
+            fi
+            case "$i" in
+              1) WAIT=15 ;;
+              2) WAIT=30 ;;
+              *) WAIT=60 ;;
+            esac
+            echo "::warning::azd auth login failed (attempt $i/$MAX_RETRIES). Retrying in ${WAIT}s..."
+            sleep "$WAIT"
+          done
 
       - name: Initialize azd environment
         run: |
@@ -222,7 +241,26 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Refresh azd auth before Log Analytics polling
-        run: azd auth login --client-id "${{ vars.AZURE_CLIENT_ID }}" --federated-credential-provider github --tenant-id "${{ secrets.AZURE_TENANT_ID }}"
+        run: |
+          MAX_RETRIES=4
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "=== azd auth refresh attempt $i/$MAX_RETRIES ==="
+            if azd auth login --client-id "${{ vars.AZURE_CLIENT_ID }}" --federated-credential-provider github --tenant-id "${{ secrets.AZURE_TENANT_ID }}"; then
+              echo "azd auth refresh succeeded on attempt $i"
+              break
+            fi
+            if [ "$i" -eq "$MAX_RETRIES" ]; then
+              echo "::error::azd auth refresh failed after $MAX_RETRIES attempts"
+              exit 1
+            fi
+            case "$i" in
+              1) WAIT=15 ;;
+              2) WAIT=30 ;;
+              *) WAIT=60 ;;
+            esac
+            echo "::warning::azd auth refresh failed (attempt $i/$MAX_RETRIES). Retrying in ${WAIT}s..."
+            sleep "$WAIT"
+          done
 
       - name: Run Log Analytics KQL regression test
         run: |
@@ -236,4 +274,25 @@ jobs:
 
       - name: Cleanup (azd down)
         if: always() && (inputs.cleanup != false || github.event_name == 'pull_request')
-        run: azd down --no-prompt --force --purge
+        run: |
+          MAX_RETRIES=4
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "=== pre-cleanup azd auth attempt $i/$MAX_RETRIES ==="
+            if azd auth login --client-id "${{ vars.AZURE_CLIENT_ID }}" --federated-credential-provider github --tenant-id "${{ secrets.AZURE_TENANT_ID }}"; then
+              echo "pre-cleanup azd auth succeeded on attempt $i"
+              break
+            fi
+            if [ "$i" -eq "$MAX_RETRIES" ]; then
+              echo "::error::pre-cleanup azd auth failed after $MAX_RETRIES attempts"
+              exit 1
+            fi
+            case "$i" in
+              1) WAIT=15 ;;
+              2) WAIT=30 ;;
+              *) WAIT=60 ;;
+            esac
+            echo "::warning::pre-cleanup azd auth failed (attempt $i/$MAX_RETRIES). Retrying in ${WAIT}s..."
+            sleep "$WAIT"
+          done
+
+          azd down --no-prompt --force --purge
