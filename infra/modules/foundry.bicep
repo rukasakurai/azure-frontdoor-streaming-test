@@ -51,7 +51,6 @@ resource deployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01
 }
 
 output endpoint string = account.properties.endpoint
+output id string = account.id
 output accountName string = account.name
 output deploymentName string = deployment.name
-
-output apiKey string = ''

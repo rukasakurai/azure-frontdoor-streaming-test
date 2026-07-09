@@ -89,7 +89,7 @@ azd down
 |----------|-------------|-------------|
 | `GET /sse` | `text/event-stream` | Sends 10 SSE events at 1-second intervals |
 | `GET /ndjson` | `application/x-ndjson` | Sends 10 JSON lines at 1-second intervals |
-| `GET /sse-agent` | `text/event-stream` | Proxies a streaming chat completion from Microsoft Foundry when an API key is configured |
+| `GET /sse-agent` | `text/event-stream` | Proxies a streaming chat completion from Microsoft Foundry using managed identity |
 | `GET /static-test/cacheable/{asset}` | varies | Cacheable static assets for AFD cache-status checks |
 | `GET /static-test/no-store/{asset}` | varies | Static assets that intentionally opt out of caching |
 | `GET /static-test/query/{asset}` | varies | Cacheable static assets for query-string cache checks |
@@ -161,10 +161,10 @@ The App Service receives Foundry environment variables from the deployment:
 | Variable | Description |
 |----------|-------------|
 | `FOUNDRY_ENDPOINT` | Cognitive Services account endpoint URL |
-| `FOUNDRY_API_KEY` | API key for authentication, when local auth is enabled and a key is configured |
+| `FOUNDRY_AUTH_MODE` | Authentication mode (`managed-identity`) |
 | `FOUNDRY_DEPLOYMENT_NAME` | Name of the deployed model (default: `gpt-4o-mini`) |
 
-The `/sse-agent` endpoint returns HTTP 503 when these variables are not configured, and `test.sh` automatically skips the agent test in that case.
+The App Service uses its system-assigned managed identity with the `Cognitive Services OpenAI User` role on the Foundry account. The `/sse-agent` endpoint returns HTTP 503 when Foundry or managed identity authentication is not configured, and `test.sh` automatically skips the agent test in that case.
 
 ### Resource Group Tags (CI/CD)
 

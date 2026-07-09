@@ -13,10 +13,6 @@ param appServicePlanId string
 @description('Microsoft Foundry endpoint URL.')
 param foundryEndpoint string = ''
 
-@secure()
-@description('Microsoft Foundry API key.')
-param foundryApiKey string = ''
-
 @description('Microsoft Foundry model deployment name.')
 param foundryDeploymentName string = ''
 
@@ -25,6 +21,9 @@ resource appService 'Microsoft.Web/sites@2024-04-01' = {
   location: location
   tags: union(tags, { 'azd-service-name': 'app' })
   kind: 'app,linux'
+  identity: {
+    type: 'SystemAssigned'
+  }
   properties: {
     serverFarmId: appServicePlanId
     httpsOnly: true
@@ -47,8 +46,8 @@ resource appService 'Microsoft.Web/sites@2024-04-01' = {
           value: foundryEndpoint
         }
         {
-          name: 'FOUNDRY_API_KEY'
-          value: foundryApiKey
+          name: 'FOUNDRY_AUTH_MODE'
+          value: 'managed-identity'
         }
         {
           name: 'FOUNDRY_DEPLOYMENT_NAME'
@@ -62,3 +61,4 @@ resource appService 'Microsoft.Web/sites@2024-04-01' = {
 output id string = appService.id
 output name string = appService.name
 output defaultHostName string = appService.properties.defaultHostName
+output principalId string = appService.identity.principalId

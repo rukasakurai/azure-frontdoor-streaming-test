@@ -214,6 +214,16 @@ jobs:
             sleep "$WAIT"
           done
 
+      - name: Refresh Azure auth before Log Analytics polling
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Refresh azd auth before Log Analytics polling
+        run: azd auth login --client-id "${{ vars.AZURE_CLIENT_ID }}" --federated-credential-provider github --tenant-id "${{ secrets.AZURE_TENANT_ID }}"
+
       - name: Run Log Analytics KQL regression test
         run: |
           chmod +x log-test.sh
