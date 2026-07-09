@@ -30,11 +30,10 @@ resource account 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
   properties: {
     customSubDomainName: name
     publicNetworkAccess: 'Enabled'
-    // Keep local auth enabled so this self-contained E2E harness can create a new
-    // resource group and immediately test Foundry streaming without requiring the
-    // GitHub Actions principal to create RBAC assignments. Managed identity auth is
-    // a valid target architecture, but it requires either role-assignment privileges
-    // during E2E or pre-managed identity infrastructure outside this template.
+    // This harness currently uses local auth so ephemeral E2E deployments can
+    // exercise Foundry streaming without extra pre-provisioned identity setup.
+    // If changing this to managed identity or another auth model, account for the
+    // resulting E2E setup, permissions, cleanup, and secret-handling tradeoffs.
     disableLocalAuth: false
   }
 }
