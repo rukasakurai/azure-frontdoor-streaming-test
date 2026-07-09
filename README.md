@@ -54,7 +54,7 @@ modifying its tags.
 - Resource group
 - App Service Plan (Linux B1)
 - App Service (Node.js 20 LTS) with the Fastify server
-- Azure Front Door Premium profile with optimized and baseline routes forwarding to the App Service
+- Azure Front Door Premium profile with cache rules for optimized and baseline static-asset behavior
 - Log Analytics workspace receiving Azure Front Door access logs
 - Microsoft Foundry account (AIServices) with a `gpt-4o-mini` model deployment
 
@@ -94,7 +94,7 @@ azd down
 | `GET /static-test/no-store/{asset}` | varies | Static assets that intentionally opt out of caching |
 | `GET /static-test/query/{asset}` | varies | Cacheable static assets for query-string cache checks |
 | `GET /static-test/large/large.txt` | `text/plain` | Larger text asset for size/compression checks |
-| `GET /cache-baseline/static-test/query/{asset}` | varies | Baseline AFD route using query strings in the cache key |
+| `GET /cache-baseline/static-test/query/{asset}` | varies | Baseline cache rule using query strings in the cache key |
 | `GET /health` | `application/json` | Returns `{"status":"ok"}` – used by AFD health probe |
 
 ## Test Script Behaviour

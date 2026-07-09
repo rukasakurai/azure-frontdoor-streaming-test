@@ -31,8 +31,8 @@ query_count() {
 | where Category == \"FrontDoorAccessLog\"
 | where requestUri_s contains \"${RUN_ID}\"
 | extend Path = tostring(parse_url(requestUri_s).Path)
-| where (Path startswith \"/cache-baseline/\" and routingRuleName_s == \"baseline-route\")
-    or (not(Path startswith \"/cache-baseline/\") and routingRuleName_s == \"default-route\")
+| where Path startswith \"/cache-baseline/\" or Path startswith \"/static-test/\"
+| where cacheStatus_s in (\"MISS\", \"HIT\", \"REMOTE_HIT\")
 | summarize Count=count()" \
     --query '[0].Count' \
     -o tsv | tr -d '\r'
@@ -71,8 +71,8 @@ az monitor log-analytics query \
 | where requestUri_s contains \"${RUN_ID}\"
 | extend Path = tostring(parse_url(requestUri_s).Path)
 | extend Scenario = case(
-    Path startswith \"/cache-baseline/\" and routingRuleName_s == \"baseline-route\", \"baseline-use-query-string\",
-    routingRuleName_s == \"default-route\", \"optimized-ignore-query-string\",
+    Path startswith \"/cache-baseline/\", \"baseline-use-query-string\",
+    Path startswith \"/static-test/\", \"optimized-ignore-query-string\",
     \"unexpected-route\")
 | where Scenario != \"unexpected-route\"
 | summarize
@@ -93,8 +93,8 @@ passed="$(az monitor log-analytics query \
 | where requestUri_s contains \"${RUN_ID}\"
 | extend Path = tostring(parse_url(requestUri_s).Path)
 | extend Scenario = case(
-    Path startswith \"/cache-baseline/\" and routingRuleName_s == \"baseline-route\", \"baseline-use-query-string\",
-    routingRuleName_s == \"default-route\", \"optimized-ignore-query-string\",
+    Path startswith \"/cache-baseline/\", \"baseline-use-query-string\",
+    Path startswith \"/static-test/\", \"optimized-ignore-query-string\",
     \"unexpected-route\")
 | where Scenario != \"unexpected-route\"
 | summarize Requests=count(), MissRateBasisPoints=toint(round(10000.0 * countif(cacheStatus_s == \"MISS\") / count(), 0)) by Scenario;

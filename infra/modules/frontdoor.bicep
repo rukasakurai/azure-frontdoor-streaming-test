@@ -17,7 +17,7 @@ var originGroupName = 'app-origin-group'
 var originName = 'app-origin'
 var endpointName = 'ep-${resourceToken}'
 var routeName = 'default-route'
-var baselineRouteName = 'baseline-route'
+var ruleSetName = 'cacheRules'
 
 resource afdProfile 'Microsoft.Cdn/profiles@2024-09-01' = {
   name: name
@@ -77,66 +77,107 @@ resource endpoint 'Microsoft.Cdn/profiles/afdEndpoints@2024-09-01' = {
 resource route 'Microsoft.Cdn/profiles/afdEndpoints/routes@2024-09-01' = {
   parent: endpoint
   name: routeName
-  dependsOn: [origin]
+  dependsOn: [
+    origin
+    baselineCacheRule
+    optimizedCacheRule
+  ]
   properties: {
     enabledState: 'Enabled'
     originGroup: {
       id: originGroup.id
     }
     supportedProtocols: ['Https']
-    patternsToMatch: [
-      '/health'
-      '/sse'
-      '/ndjson'
-      '/sse-agent'
-      '/static-test/*'
-    ]
+    patternsToMatch: ['/*']
     forwardingProtocol: 'HttpsOnly'
     linkToDefaultDomain: 'Enabled'
     httpsRedirect: 'Enabled'
-    cacheConfiguration: {
-      queryStringCachingBehavior: 'IgnoreQueryString'
-      compressionSettings: {
-        isCompressionEnabled: true
-        contentTypesToCompress: [
-          'application/json'
-          'application/javascript'
-          'text/css'
-          'text/html'
-          'text/plain'
-        ]
+    ruleSets: [
+      {
+        id: ruleSet.id
       }
-    }
+    ]
   }
 }
 
-resource baselineRoute 'Microsoft.Cdn/profiles/afdEndpoints/routes@2024-09-01' = {
-  parent: endpoint
-  name: baselineRouteName
-  dependsOn: [origin]
+resource ruleSet 'Microsoft.Cdn/profiles/ruleSets@2024-09-01' = {
+  parent: afdProfile
+  name: ruleSetName
+}
+
+resource baselineCacheRule 'Microsoft.Cdn/profiles/ruleSets/rules@2024-09-01' = {
+  parent: ruleSet
+  name: 'baselineUseQueryString'
   properties: {
-    enabledState: 'Enabled'
-    originGroup: {
-      id: originGroup.id
-    }
-    supportedProtocols: ['Https']
-    patternsToMatch: ['/cache-baseline/*']
-    forwardingProtocol: 'HttpsOnly'
-    linkToDefaultDomain: 'Enabled'
-    httpsRedirect: 'Enabled'
-    cacheConfiguration: {
-      queryStringCachingBehavior: 'UseQueryString'
-      compressionSettings: {
-        isCompressionEnabled: true
-        contentTypesToCompress: [
-          'application/json'
-          'application/javascript'
-          'text/css'
-          'text/html'
-          'text/plain'
-        ]
+    order: 1
+    matchProcessingBehavior: 'Stop'
+    conditions: [
+      {
+        name: 'UrlPath'
+        parameters: {
+          operator: 'BeginsWith'
+          negateCondition: false
+          matchValues: [
+            'cache-baseline/static-test/query/'
+          ]
+          transforms: []
+          typeName: 'DeliveryRuleUrlPathMatchConditionParameters'
+        }
       }
-    }
+    ]
+    actions: [
+      {
+        name: 'RouteConfigurationOverride'
+        parameters: {
+          cacheConfiguration: {
+            queryStringCachingBehavior: 'UseQueryString'
+            isCompressionEnabled: 'Enabled'
+            cacheBehavior: 'HonorOrigin'
+            cacheDuration: null
+          }
+          originGroupOverride: null
+          typeName: 'DeliveryRuleRouteConfigurationOverrideActionParameters'
+        }
+      }
+    ]
+  }
+}
+
+resource optimizedCacheRule 'Microsoft.Cdn/profiles/ruleSets/rules@2024-09-01' = {
+  parent: ruleSet
+  name: 'optimizedIgnoreQueryString'
+  properties: {
+    order: 2
+    matchProcessingBehavior: 'Stop'
+    conditions: [
+      {
+        name: 'UrlPath'
+        parameters: {
+          operator: 'BeginsWith'
+          negateCondition: false
+          matchValues: [
+            'static-test/'
+          ]
+          transforms: []
+          typeName: 'DeliveryRuleUrlPathMatchConditionParameters'
+        }
+      }
+    ]
+    actions: [
+      {
+        name: 'RouteConfigurationOverride'
+        parameters: {
+          cacheConfiguration: {
+            queryStringCachingBehavior: 'IgnoreQueryString'
+            isCompressionEnabled: 'Enabled'
+            cacheBehavior: 'HonorOrigin'
+            cacheDuration: null
+          }
+          originGroupOverride: null
+          typeName: 'DeliveryRuleRouteConfigurationOverrideActionParameters'
+        }
+      }
+    ]
   }
 }
 
