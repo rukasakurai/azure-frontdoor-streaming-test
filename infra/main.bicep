@@ -10,9 +10,6 @@ param location string
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
-var appServiceName = '${abbrs.webSitesAppService}${resourceToken}'
-var foundryName = '${abbrs.cognitiveServicesAccounts}${resourceToken}'
-var cognitiveServicesOpenAIUserRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
 
 module appServicePlan './modules/appserviceplan.bicep' = {
   name: 'appserviceplan'
@@ -26,11 +23,12 @@ module appServicePlan './modules/appserviceplan.bicep' = {
 module appService './modules/appservice.bicep' = {
   name: 'appservice'
   params: {
-    name: appServiceName
+    name: '${abbrs.webSitesAppService}${resourceToken}'
     location: location
     tags: tags
     appServicePlanId: appServicePlan.outputs.id
     foundryEndpoint: foundry.outputs.endpoint
+    foundryApiKey: foundry.outputs.apiKey
     foundryDeploymentName: foundry.outputs.deploymentName
   }
 }
@@ -38,7 +36,7 @@ module appService './modules/appservice.bicep' = {
 module foundry './modules/foundry.bicep' = {
   name: 'foundry'
   params: {
-    name: foundryName
+    name: '${abbrs.cognitiveServicesAccounts}${resourceToken}'
     location: location
     tags: tags
   }
@@ -50,20 +48,6 @@ module logAnalytics './modules/loganalytics.bicep' = {
     name: '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
     location: location
     tags: tags
-  }
-}
-
-resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' existing = {
-  name: foundryName
-}
-
-resource foundryOpenAIUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(foundryAccount.id, appServiceName, cognitiveServicesOpenAIUserRoleId)
-  scope: foundryAccount
-  properties: {
-    roleDefinitionId: cognitiveServicesOpenAIUserRoleId
-    principalId: appService.outputs.principalId
-    principalType: 'ServicePrincipal'
   }
 }
 
