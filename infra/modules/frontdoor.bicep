@@ -10,10 +10,14 @@ param originHostName string
 @description('Unique token used to avoid resource-name collisions (e.g. uniqueString output).')
 param resourceToken string
 
+@description('Resource ID of the Log Analytics workspace that receives Front Door access logs.')
+param logAnalyticsWorkspaceId string
+
 var originGroupName = 'app-origin-group'
 var originName = 'app-origin'
 var endpointName = 'ep-${resourceToken}'
 var routeName = 'default-route'
+var baselineRouteName = 'baseline-route'
 
 resource afdProfile 'Microsoft.Cdn/profiles@2024-09-01' = {
   name: name
@@ -80,10 +84,88 @@ resource route 'Microsoft.Cdn/profiles/afdEndpoints/routes@2024-09-01' = {
       id: originGroup.id
     }
     supportedProtocols: ['Https']
-    patternsToMatch: ['/*']
+    patternsToMatch: [
+      '/health'
+      '/sse'
+      '/ndjson'
+      '/sse-agent'
+      '/static-test/*'
+    ]
     forwardingProtocol: 'HttpsOnly'
     linkToDefaultDomain: 'Enabled'
     httpsRedirect: 'Enabled'
+    cacheConfiguration: {
+      queryStringCachingBehavior: 'IgnoreQueryString'
+      compressionSettings: {
+        isCompressionEnabled: true
+        contentTypesToCompress: [
+          'application/json'
+          'application/javascript'
+          'text/css'
+          'text/html'
+          'text/plain'
+        ]
+      }
+    }
+  }
+}
+
+resource baselineRoute 'Microsoft.Cdn/profiles/afdEndpoints/routes@2024-09-01' = {
+  parent: endpoint
+  name: baselineRouteName
+  dependsOn: [origin]
+  properties: {
+    enabledState: 'Enabled'
+    originGroup: {
+      id: originGroup.id
+    }
+    supportedProtocols: ['Https']
+    patternsToMatch: ['/cache-baseline/*']
+    forwardingProtocol: 'HttpsOnly'
+    linkToDefaultDomain: 'Enabled'
+    httpsRedirect: 'Enabled'
+    cacheConfiguration: {
+      queryStringCachingBehavior: 'UseQueryString'
+      compressionSettings: {
+        isCompressionEnabled: true
+        contentTypesToCompress: [
+          'application/json'
+          'application/javascript'
+          'text/css'
+          'text/html'
+          'text/plain'
+        ]
+      }
+    }
+  }
+}
+
+// Latest stable diagnosticSettings API does not support scoped extension resources for this target.
+resource accessLogs 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  name: 'frontdoor-access-logs'
+  scope: afdProfile
+  properties: {
+    workspaceId: logAnalyticsWorkspaceId
+    logs: [
+      {
+        categoryGroup: 'allLogs'
+        enabled: true
+        retentionPolicy: {
+          days: 0
+          enabled: false
+        }
+      }
+    ]
+    metrics: [
+      {
+        category: 'AllMetrics'
+        enabled: false
+        retentionPolicy: {
+          days: 0
+          enabled: false
+        }
+      }
+    ]
   }
 }
 

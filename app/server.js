@@ -1,12 +1,42 @@
 'use strict'
 
 const fastify = require('fastify')({ logger: true })
+const fs = require('fs')
 const https = require('https')
+const path = require('path')
 const { URL } = require('url')
 
 const PORT = process.env.PORT || 3000
 const EVENT_COUNT = 10
 const INTERVAL_MS = 1000
+const STATIC_ROOT = path.join(__dirname, 'public', 'static-test')
+
+const staticAssets = {
+  'index.html': 'text/html; charset=utf-8',
+  'app.js': 'application/javascript; charset=utf-8',
+  'style.css': 'text/css; charset=utf-8',
+  'data.csv': 'text/csv; charset=utf-8',
+  'large.txt': 'text/plain; charset=utf-8',
+}
+
+const staticScenarios = {
+  cacheable: {
+    cacheControl: 'public, max-age=300',
+    assets: new Set(Object.keys(staticAssets)),
+  },
+  'no-store': {
+    cacheControl: 'no-store',
+    assets: new Set(Object.keys(staticAssets)),
+  },
+  query: {
+    cacheControl: 'public, max-age=300',
+    assets: new Set(Object.keys(staticAssets)),
+  },
+  large: {
+    cacheControl: 'public, max-age=300',
+    assets: new Set(['large.txt']),
+  },
+}
 
 // Microsoft Foundry configuration (set via App Service app settings)
 const FOUNDRY_ENDPOINT = process.env.FOUNDRY_ENDPOINT || ''
@@ -16,6 +46,44 @@ const FOUNDRY_DEPLOYMENT_NAME = process.env.FOUNDRY_DEPLOYMENT_NAME || 'gpt-4o-m
 // Health probe endpoint used by Azure Front Door
 fastify.get('/health', async (request, reply) => {
   return { status: 'ok' }
+})
+
+function sendStaticAsset(reply, asset, cacheControl) {
+  const contentType = staticAssets[asset]
+  if (!contentType) {
+    reply.code(404).send({ error: 'Static test asset not found' })
+    return
+  }
+
+  const filePath = path.join(STATIC_ROOT, asset)
+  reply
+    .header('Cache-Control', cacheControl)
+    .header('Content-Type', contentType)
+    .send(fs.createReadStream(filePath))
+}
+
+fastify.get('/static-test/:scenario/:asset', (request, reply) => {
+  const scenario = staticScenarios[request.params.scenario]
+  if (!scenario || !scenario.assets.has(request.params.asset)) {
+    reply.code(404).send({ error: 'Static test scenario asset not found' })
+    return
+  }
+
+  sendStaticAsset(reply, request.params.asset, scenario.cacheControl)
+})
+
+fastify.get('/static-test/:asset', (request, reply) => {
+  sendStaticAsset(reply, request.params.asset, 'public, max-age=300')
+})
+
+fastify.get('/cache-baseline/static-test/:scenario/:asset', (request, reply) => {
+  const scenario = staticScenarios[request.params.scenario]
+  if (!scenario || !scenario.assets.has(request.params.asset)) {
+    reply.code(404).send({ error: 'Static test scenario asset not found' })
+    return
+  }
+
+  sendStaticAsset(reply, request.params.asset, scenario.cacheControl)
 })
 
 // SSE endpoint – sends 10 events at 1-second intervals

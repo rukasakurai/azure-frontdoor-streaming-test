@@ -54,10 +54,11 @@ modifying its tags.
 - Resource group
 - App Service Plan (Linux B1)
 - App Service (Node.js 20 LTS) with the Fastify server
-- Azure Front Door Premium profile with a route forwarding `/*` to the App Service
+- Azure Front Door Premium profile with optimized and baseline routes forwarding to the App Service
+- Log Analytics workspace receiving Azure Front Door access logs
 - Microsoft Foundry account (AIServices) with a `gpt-4o-mini` model deployment
 
-It prints the `SERVICE_APP_URI` (direct URL) and `AFD_URI` at the end.
+It prints the app, Front Door, and Log Analytics workspace outputs at the end.
 
 ### 2. Run the streaming test
 
@@ -88,7 +89,12 @@ azd down
 |----------|-------------|-------------|
 | `GET /sse` | `text/event-stream` | Sends 10 SSE events at 1-second intervals |
 | `GET /ndjson` | `application/x-ndjson` | Sends 10 JSON lines at 1-second intervals |
-| `GET /sse-agent` | `text/event-stream` | Proxies a streaming chat completion from Microsoft Foundry |
+| `GET /sse-agent` | `text/event-stream` | Proxies a streaming chat completion from Microsoft Foundry when an API key is configured |
+| `GET /static-test/cacheable/{asset}` | varies | Cacheable static assets for AFD cache-status checks |
+| `GET /static-test/no-store/{asset}` | varies | Static assets that intentionally opt out of caching |
+| `GET /static-test/query/{asset}` | varies | Cacheable static assets for query-string cache checks |
+| `GET /static-test/large/large.txt` | `text/plain` | Larger text asset for size/compression checks |
+| `GET /cache-baseline/static-test/query/{asset}` | varies | Baseline AFD route using query strings in the cache key |
 | `GET /health` | `application/json` | Returns `{"status":"ok"}` – used by AFD health probe |
 
 ## Test Script Behaviour
@@ -144,17 +150,18 @@ This project provisions the following Azure resources:
 | App Service Plan | `Microsoft.Web/serverfarms` | Linux B1 hosting plan |
 | App Service | `Microsoft.Web/sites` | Node.js 20 LTS Fastify server |
 | Azure Front Door | `Microsoft.Cdn/profiles` | Premium CDN/load-balancer |
+| Log Analytics Workspace | `Microsoft.OperationalInsights/workspaces` | Stores Azure Front Door access logs |
 | Microsoft Foundry | `Microsoft.CognitiveServices/accounts` (kind: `AIServices`) | AI model hosting |
 | Model Deployment | `Microsoft.CognitiveServices/accounts/deployments` | `gpt-4o-mini` for streaming chat |
 
 ### Microsoft Foundry Configuration
 
-The App Service receives three environment variables from the Foundry deployment:
+The App Service receives Foundry environment variables from the deployment:
 
 | Variable | Description |
 |----------|-------------|
 | `FOUNDRY_ENDPOINT` | Cognitive Services account endpoint URL |
-| `FOUNDRY_API_KEY` | API key for authentication |
+| `FOUNDRY_API_KEY` | API key for authentication, when local auth is enabled and a key is configured |
 | `FOUNDRY_DEPLOYMENT_NAME` | Name of the deployed model (default: `gpt-4o-mini`) |
 
 The `/sse-agent` endpoint returns HTTP 503 when these variables are not configured, and `test.sh` automatically skips the agent test in that case.

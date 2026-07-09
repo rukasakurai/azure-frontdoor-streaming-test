@@ -28,6 +28,7 @@ resource appService 'Microsoft.Web/sites@2024-04-01' = {
   properties: {
     serverFarmId: appServicePlanId
     httpsOnly: true
+    clientAffinityEnabled: false
     siteConfig: {
       linuxFxVersion: 'NODE|20-lts'
       appCommandLine: 'npm start'

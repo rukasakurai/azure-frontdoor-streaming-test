@@ -1,0 +1,5 @@
+name,type,size
+index.html,text/html,small
+app.js,application/javascript,small
+style.css,text/css,small
+large.txt,text/plain,larger

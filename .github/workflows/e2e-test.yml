@@ -22,6 +22,8 @@ on:
       - "app/**"
       - "infra/**"
       - "test.sh"
+      - "log-test.sh"
+      - "cache-test.sh"
       - "azure.yaml"
 
 permissions:
@@ -103,10 +105,15 @@ jobs:
         run: |
           SERVICE_APP_URI=$(azd env get-value SERVICE_APP_URI)
           AFD_URI=$(azd env get-value AFD_URI)
+          AFD_BASELINE_URI=$(azd env get-value AFD_BASELINE_URI)
+          LOG_ANALYTICS_WORKSPACE_CUSTOMER_ID=$(azd env get-value LOG_ANALYTICS_WORKSPACE_CUSTOMER_ID)
           echo "direct_url=$SERVICE_APP_URI" >> "$GITHUB_OUTPUT"
           echo "afd_url=$AFD_URI" >> "$GITHUB_OUTPUT"
+          echo "afd_baseline_url=$AFD_BASELINE_URI" >> "$GITHUB_OUTPUT"
+          echo "workspace_customer_id=$LOG_ANALYTICS_WORKSPACE_CUSTOMER_ID" >> "$GITHUB_OUTPUT"
           echo "Direct URL: $SERVICE_APP_URI"
           echo "AFD URL: $AFD_URI"
+          echo "AFD baseline URL: $AFD_BASELINE_URI"
 
       - name: Verify origin health before waiting for AFD
         run: |
@@ -155,6 +162,16 @@ jobs:
         run: |
           chmod +x test.sh
           ./test.sh "${{ steps.urls.outputs.direct_url }}" "${{ steps.urls.outputs.afd_url }}"
+
+      - name: Run Log Analytics KQL regression test
+        run: |
+          chmod +x log-test.sh
+          ./log-test.sh "${{ steps.urls.outputs.workspace_customer_id }}" "${{ steps.urls.outputs.afd_url }}"
+
+      - name: Run Front Door cache MISS-rate comparison test
+        run: |
+          chmod +x cache-test.sh
+          ./cache-test.sh "${{ steps.urls.outputs.workspace_customer_id }}" "${{ steps.urls.outputs.afd_baseline_url }}" "${{ steps.urls.outputs.afd_url }}"
 
       - name: Cleanup (azd down)
         if: always() && (inputs.cleanup != false || github.event_name == 'pull_request')

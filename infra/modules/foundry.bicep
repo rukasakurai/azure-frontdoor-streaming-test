@@ -30,7 +30,7 @@ resource account 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
   properties: {
     customSubDomainName: name
     publicNetworkAccess: 'Enabled'
-    disableLocalAuth: false
+    disableLocalAuth: true
   }
 }
 
@@ -54,5 +54,4 @@ output endpoint string = account.properties.endpoint
 output accountName string = account.name
 output deploymentName string = deployment.name
 
-#disable-next-line outputs-should-not-contain-secrets
-output apiKey string = account.listKeys().key1
+output apiKey string = ''
