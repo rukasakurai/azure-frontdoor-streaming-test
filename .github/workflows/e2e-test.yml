@@ -17,13 +17,6 @@ on:
         required: false
         type: string
         default: "japaneast"
-  pull_request:
-    paths:
-      - "app/**"
-      - "infra/**"
-      - "test.sh"
-      - "log-test.sh"
-      - "azure.yaml"
 
 permissions:
   id-token: write
