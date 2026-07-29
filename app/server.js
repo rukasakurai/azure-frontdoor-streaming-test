@@ -36,6 +36,12 @@ const staticScenarios = {
     cacheControl: 'public, max-age=300',
     assets: new Set(['large.txt']),
   },
+  // No Cache-Control header at all, so Front Door falls back to its own default
+  // cache duration instead of an origin directive.
+  'no-cache-control': {
+    cacheControl: null,
+    assets: new Set(Object.keys(staticAssets)),
+  },
 }
 
 // Microsoft Foundry configuration (set via App Service app settings)
@@ -56,13 +62,15 @@ function sendStaticAsset(reply, asset, cacheControl) {
   }
 
   const filePath = path.join(STATIC_ROOT, asset)
+  if (cacheControl) {
+    reply.header('Cache-Control', cacheControl)
+  }
   reply
-    .header('Cache-Control', cacheControl)
     .header('Content-Type', contentType)
     .send(fs.createReadStream(filePath))
 }
 
-fastify.get('/static-test/:scenario/:asset', (request, reply) => {
+function sendScenarioAsset(request, reply) {
   const scenario = staticScenarios[request.params.scenario]
   if (!scenario || !scenario.assets.has(request.params.asset)) {
     reply.code(404).send({ error: 'Static test scenario asset not found' })
@@ -70,21 +78,20 @@ fastify.get('/static-test/:scenario/:asset', (request, reply) => {
   }
 
   sendStaticAsset(reply, request.params.asset, scenario.cacheControl)
-})
+}
+
+fastify.get('/static-test/:scenario/:asset', sendScenarioAsset)
+
+// :token is ignored by the origin. It exists so that each test arm can request a
+// distinct Front Door cache key, which query strings cannot do because the
+// static-test route is configured with queryStringCachingBehavior=IgnoreQueryString.
+fastify.get('/static-test/:scenario/:token/:asset', sendScenarioAsset)
 
 fastify.get('/static-test/:asset', (request, reply) => {
   sendStaticAsset(reply, request.params.asset, 'public, max-age=300')
 })
 
-fastify.get('/cache-baseline/static-test/:scenario/:asset', (request, reply) => {
-  const scenario = staticScenarios[request.params.scenario]
-  if (!scenario || !scenario.assets.has(request.params.asset)) {
-    reply.code(404).send({ error: 'Static test scenario asset not found' })
-    return
-  }
-
-  sendStaticAsset(reply, request.params.asset, scenario.cacheControl)
-})
+fastify.get('/cache-baseline/static-test/:scenario/:asset', sendScenarioAsset)
 
 // SSE endpoint – sends 10 events at 1-second intervals
 fastify.get('/sse', (request, reply) => {

@@ -259,12 +259,15 @@ jobs:
           chmod +x log-test.sh
           ./log-test.sh "${{ steps.urls.outputs.workspace_customer_id }}" "${{ steps.urls.outputs.afd_url }}"
 
-      # cache-test.sh is deliberately not part of this gate yet. Its 2026-07-09 run
-      # saw only 20 of the 24 expected FrontDoorAccessLog rows after 15 minutes of
-      # polling. That gap is an open question about Front Door log delivery, and
-      # gating on it would either block merges or invite weakening the assertion.
-      # Run it manually while the gap is being investigated:
+      # cache-test.sh and auth-cache-test.sh are deliberately not part of this gate yet.
+      # cache-test.sh's 2026-07-09 run saw only 20 of the 24 expected FrontDoorAccessLog
+      # rows after 15 minutes of polling. That gap is an open question about Front Door
+      # log delivery, and gating on it would either block merges or invite weakening the
+      # assertion. auth-cache-test.sh reads the same log and is an experiment rather than
+      # a regression check, so it shares the same caveat.
+      # Run them manually while the gap is being investigated:
       #   ./cache-test.sh <workspace-customer-id> <afd-baseline-url> <afd-url>
+      #   ./auth-cache-test.sh <workspace-customer-id> <afd-url> <direct-url>
 
       - name: Cleanup (azd down)
         if: always() && (inputs.cleanup != false || github.event_name == 'pull_request')

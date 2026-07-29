@@ -92,8 +92,10 @@ azd down
 | `GET /sse-agent` | `text/event-stream` | Proxies a streaming chat completion from Microsoft Foundry when an API key is configured |
 | `GET /static-test/cacheable/{asset}` | varies | Cacheable static assets for AFD cache-status checks |
 | `GET /static-test/no-store/{asset}` | varies | Static assets that intentionally opt out of caching |
+| `GET /static-test/no-cache-control/{asset}` | varies | Static assets served with **no** `Cache-Control` header, so AFD falls back to its own default cache duration |
 | `GET /static-test/query/{asset}` | varies | Cacheable static assets for query-string cache checks |
 | `GET /static-test/large/large.txt` | `text/plain` | Larger text asset for size/compression checks |
+| `GET /static-test/{scenario}/{token}/{asset}` | varies | Same as above, with an ignored `{token}` segment so a test arm can claim a distinct AFD cache key |
 | `GET /cache-baseline/static-test/query/{asset}` | varies | Baseline cache rule using query strings in the cache key |
 | `GET /health` | `application/json` | Returns `{"status":"ok"}` – used by AFD health probe |
 
@@ -113,6 +115,61 @@ For each endpoint and each URL it:
 5. Also detects total buffering if all AFD chunks arrive within 2 seconds of each other
 
 **Exit code 0** = PASS, **exit code 1** = FAIL.
+
+## Front Door Cache Tests
+
+Three additional scripts read the Front Door access log from Log Analytics. Only
+`log-test.sh` is part of the CI gate; run the other two by hand against a deployed
+environment.
+
+| Script | Purpose | In CI gate |
+|--------|---------|------------|
+| `log-test.sh <workspace-customer-id> <afd-url>` | Verifies AFD access logs reach Log Analytics with the columns the other tests need | yes |
+| `cache-test.sh <workspace-customer-id> <afd-baseline-url> <afd-url>` | Compares MISS rates between the query-string-keyed baseline route and the query-string-ignoring route | no |
+| `auth-cache-test.sh <workspace-customer-id> <afd-url> [direct-url]` | Records how AFD reports cache status when an `Authorization` header suppresses caching | no |
+
+Get the arguments from `azd env get-value LOG_ANALYTICS_WORKSPACE_CUSTOMER_ID`,
+`azd env get-value AFD_URI`, `azd env get-value AFD_BASELINE_URI`, and
+`azd env get-value SERVICE_APP_URI`.
+
+### `auth-cache-test.sh`
+
+[Front Door's caching docs](https://learn.microsoft.com/en-us/azure/frontdoor/front-door-caching)
+say a request carrying an `Authorization` header isn't cached unless the response
+carries a `Cache-Control` directive that permits caching, but they don't say which
+cache status such a response reports. This script measures it, using one asset and
+three arms:
+
+| Arm | `Authorization` | Origin `Cache-Control` | Expected |
+|-----|-----------------|------------------------|----------|
+| 1 | absent | absent | 2nd request HIT — AFD's default 1–3 day cache applies |
+| 2 | present | absent | stays MISS |
+| 3 | present | `public, max-age=300` | 2nd request HIT |
+
+Hypotheses: **H1** — arm 2 is reported as `X-Cache: TCP_MISS` rather than
+`PRIVATE_NOSTORE`. **H2** — `Cache-Control: public, max-age=300` restores caching for
+the same authorized request. H1 is falsified if arm 2 turns HIT.
+
+Two details make the arms trustworthy:
+
+- With no `Cache-Control`, AFD caches for a **random 1–3 days**, so arm 1 can leave an
+  object that makes arm 2 falsely HIT. Every arm therefore uses a **unique path**
+  (`/static-test/{scenario}/{run-id}-{arm}/app.js`). Waiting doesn't help, because the
+  cache is per-POP.
+- Query strings can't provide that uniqueness: the `static-test/` route runs with
+  `queryStringCachingBehavior: IgnoreQueryString`. That is exactly why they are safe
+  to use as per-request labels (`?run=...&req=N`), which is how log rows are attributed
+  back to an arm.
+
+All arms stay on the same route, so no redeployment happens mid-run. The script prints
+`X-Cache`, `Age`, `Cache-Control`, and `Content-Encoding` per request, then the
+`cacheStatus_s` value from the access log. Its exit code reflects whether the
+experiment was **conclusive** — a falsified hypothesis is a result, not a failure — so
+it exits non-zero only when requests fail, logs never arrive, or the unauthenticated
+control arm never caches.
+
+The `Authorization` value it sends is a throwaway placeholder. Front Door only needs
+the header to be present, and the origin never inspects it.
 
 ## Results
 
