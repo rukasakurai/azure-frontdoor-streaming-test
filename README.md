@@ -169,7 +169,35 @@ it exits non-zero only when requests fail, logs never arrive, or the unauthentic
 control arm never caches.
 
 The `Authorization` value it sends is a throwaway placeholder. Front Door only needs
-the header to be present, and the origin never inspects it.
+the header to be present, and the origin never inspects it. Pass `AZ_SUBSCRIPTION` if
+the workspace isn't in the az CLI's default subscription.
+
+#### Recorded result
+
+Run `auth-cache-20260729T024205Z`, Japan East, Front Door Premium, asset `app.js`:
+
+| Arm | Request 1 | Request 2 | Request 3 | Access log `cacheStatus` |
+|-----|-----------|-----------|-----------|--------------------------|
+| 1 — no `Authorization`, no `Cache-Control` | `TCP_MISS` | `TCP_HIT` | `TCP_HIT` | MISS, HIT, HIT |
+| 2 — `Authorization`, no `Cache-Control` | `TCP_MISS` | `TCP_MISS` | `TCP_MISS` | MISS, MISS, MISS |
+| 3 — `Authorization`, `public, max-age=300` | `TCP_MISS` | `TCP_HIT` | `TCP_REMOTE_HIT` | MISS, HIT, REMOTE_HIT |
+
+**H1 supported.** An auth-suppressed response reports `X-Cache: TCP_MISS` and
+`cacheStatus: MISS` — *not* `PRIVATE_NOSTORE`, which the docs reserve for a
+`Cache-Control` of `private` or `no-store`. So a static asset stuck on `TCP_MISS` is
+indistinguishable from an ordinary cold miss by cache status alone; the request headers
+have to be checked too. `timeTaken` corroborates the arm-2 misses as real origin
+fetches (0.12–0.23 s) against arm-1 and arm-3 hits (0.001–0.005 s).
+
+**H2 supported.** `Cache-Control: public, max-age=300` restored caching for the
+identical authorized request.
+
+Front Door sent no `Age` header on any response, including hits. `Content-Encoding` was
+absent throughout: the assets are below the compression size floor.
+
+Before suspecting this mechanism for a real asset, confirm the asset is actually
+fetched with an `Authorization` header. Browsers don't attach one to `<script src>` or
+`<link href>` subresource loads — only to explicit `fetch`/XHR calls.
 
 ## Results
 

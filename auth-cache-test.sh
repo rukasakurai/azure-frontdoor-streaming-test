@@ -44,6 +44,9 @@ MAX_WAIT_SECONDS="${MAX_WAIT_SECONDS:-900}"
 POLL_SECONDS="${POLL_SECONDS:-30}"
 REQUESTS_PER_ARM="${REQUESTS_PER_ARM:-3}"
 PRIME_GAP_SECONDS="${PRIME_GAP_SECONDS:-5}"
+# Set when the workspace lives outside the az CLI's default subscription, which
+# also fixes cross-tenant token errors from `az monitor log-analytics query`.
+AZ_SUBSCRIPTION="${AZ_SUBSCRIPTION:-}"
 ASSET="app.js"
 RUN_ID="auth-cache-$(date -u +%Y%m%dT%H%M%SZ)-$RANDOM"
 
@@ -82,7 +85,12 @@ is_hit() {
 }
 
 run_kql() {
+  local scope=()
+  if [[ -n "$AZ_SUBSCRIPTION" ]]; then
+    scope=(--subscription "$AZ_SUBSCRIPTION")
+  fi
   az monitor log-analytics query \
+    "${scope[@]}" \
     --workspace "$WORKSPACE_ID" \
     --analytics-query "$1" \
     "${@:2}"
