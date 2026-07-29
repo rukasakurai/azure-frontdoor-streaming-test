@@ -22,12 +22,53 @@ THRESHOLD_SECONDS=2   # max allowed lag between direct and AFD per-chunk arrival
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
+expected_content_type() {
+  local endpoint="$1"
+  case "$endpoint" in
+    /sse|/sse-agent) echo "text/event-stream" ;;
+    /ndjson) echo "application/x-ndjson" ;;
+    *) echo "" ;;
+  esac
+}
+
+stream_parser() {
+  local endpoint="$1"
+  case "$endpoint" in
+    /sse|/sse-agent) echo "sse" ;;
+    /ndjson) echo "ndjson" ;;
+    *) echo "line" ;;
+  esac
+}
+
+validate_stream_headers() {
+  local url="$1"
+  local expected_type="$2"
+  local headers
+  local status
+  local content_type
+
+  headers="$(curl -sS -I --max-time 15 "$url" 2>/dev/null || true)"
+  status="$(awk 'tolower($0) ~ /^http\// {code=$2} END{print code}' <<< "$headers")"
+  content_type="$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {sub(/\r$/,""); value=substr($0,index($0,":")+2)} END{print value}' <<< "$headers")"
+
+  if [[ "$status" != "200" ]]; then
+    echo " ERROR: $url returned HTTP ${status:-unknown}; expected 200" >&2
+    echo "$headers" >&2
+    return 1
+  fi
+
+  if [[ -n "$expected_type" && "$content_type" != "$expected_type"* ]]; then
+    echo " ERROR: $url returned Content-Type '${content_type:-unknown}'; expected ${expected_type}" >&2
+    echo "$headers" >&2
+    return 1
+  fi
+}
+
 # Fetch a streaming endpoint and print elapsed seconds for each received chunk.
 # Returns a newline-separated list of float timestamps (relative to request start).
 stream_timestamps() {
   local url="$1"
-  local tmpfile
-  tmpfile="$(mktemp)"
+  local parser="$2"
 
   # Record the epoch at start
   local t0
@@ -35,8 +76,16 @@ stream_timestamps() {
 
   # Stream with curl; write each chunk to a temp file, flushing line by line
   curl -sS -N --max-time 120 "$url" 2>/dev/null | while IFS= read -r line; do
-    # Skip empty lines and SSE comment/field prefixes that carry no data
+    line="${line%$'\r'}"
     [[ -z "$line" ]] && continue
+    case "$parser" in
+      sse)
+        [[ "$line" == data:* ]] || continue
+        ;;
+      ndjson)
+        [[ "$line" == \{* ]] || continue
+        ;;
+    esac
     local tnow
     tnow="$(date +%s%N)"
     # elapsed in seconds with 3 decimal places
@@ -49,8 +98,13 @@ stream_timestamps() {
 
 run_test() {
   local endpoint="$1"
+  local expected_count="${2:-}"
   local direct_url="${DIRECT_URL%/}${endpoint}"
   local afd_url="${AFD_URL%/}${endpoint}"
+  local content_type
+  local parser
+  content_type="$(expected_content_type "$endpoint")"
+  parser="$(stream_parser "$endpoint")"
 
   echo ""
   echo "════════════════════════════════════════════════════════"
@@ -58,13 +112,30 @@ run_test() {
   echo "════════════════════════════════════════════════════════"
   echo " Fetching direct  : $direct_url"
 
+  if ! validate_stream_headers "$direct_url" "$content_type"; then
+    PASS=false
+    return
+  fi
+
   # Collect timestamps into arrays
-  mapfile -t direct_ts < <(stream_timestamps "$direct_url")
+  mapfile -t direct_ts < <(stream_timestamps "$direct_url" "$parser")
   echo " Direct chunks received : ${#direct_ts[@]}"
 
   echo " Fetching via AFD : $afd_url"
-  mapfile -t afd_ts < <(stream_timestamps "$afd_url")
+  if ! validate_stream_headers "$afd_url" "$content_type"; then
+    PASS=false
+    return
+  fi
+
+  mapfile -t afd_ts < <(stream_timestamps "$afd_url" "$parser")
   echo " AFD chunks received    : ${#afd_ts[@]}"
+
+  if [[ -n "$expected_count" ]]; then
+    if (( ${#direct_ts[@]} != expected_count || ${#afd_ts[@]} != expected_count )); then
+      echo " ERROR: Expected $expected_count valid stream records, got direct=${#direct_ts[@]} AFD=${#afd_ts[@]}" >&2
+      PASS=false
+    fi
+  fi
 
   # Print comparison table
   printf "\n %-6s  %-12s  %-12s  %-10s  %s\n" "Chunk" "Direct (s)" "AFD (s)" "Δ (s)" "Status"
@@ -117,8 +188,8 @@ echo " Direct URL : $DIRECT_URL"
 echo " AFD URL    : $AFD_URL"
 echo " Threshold  : ${THRESHOLD_SECONDS}s per-chunk lag"
 
-run_test "/sse"
-run_test "/ndjson"
+run_test "/sse" 10
+run_test "/ndjson" 10
 
 # Test the /sse-agent endpoint if Microsoft Foundry is configured.
 # The endpoint returns HTTP 503 when Foundry env vars are not set.

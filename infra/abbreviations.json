@@ -3,5 +3,6 @@
   "webServerFarms": "asp-",
   "webSitesAppService": "app-",
   "networkFrontDoors": "afd-",
+  "operationalInsightsWorkspaces": "log-",
   "cognitiveServicesAccounts": "cog-"
 }

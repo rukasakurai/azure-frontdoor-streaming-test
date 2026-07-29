@@ -42,6 +42,15 @@ module foundry './modules/foundry.bicep' = {
   }
 }
 
+module logAnalytics './modules/loganalytics.bicep' = {
+  name: 'loganalytics'
+  params: {
+    name: '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
+    location: location
+    tags: tags
+  }
+}
+
 module frontDoor './modules/frontdoor.bicep' = {
   name: 'frontdoor'
   params: {
@@ -49,6 +58,7 @@ module frontDoor './modules/frontdoor.bicep' = {
     tags: tags
     originHostName: appService.outputs.defaultHostName
     resourceToken: resourceToken
+    logAnalyticsWorkspaceId: logAnalytics.outputs.id
   }
 }
 
@@ -57,3 +67,7 @@ output AZURE_TENANT_ID string = tenant().tenantId
 output SERVICE_APP_NAME string = appService.outputs.name
 output SERVICE_APP_URI string = 'https://${appService.outputs.defaultHostName}'
 output AFD_URI string = 'https://${frontDoor.outputs.endpointHostName}'
+output AFD_BASELINE_URI string = 'https://${frontDoor.outputs.endpointHostName}/cache-baseline'
+output LOG_ANALYTICS_WORKSPACE_NAME string = logAnalytics.outputs.name
+output LOG_ANALYTICS_WORKSPACE_ID string = logAnalytics.outputs.id
+output LOG_ANALYTICS_WORKSPACE_CUSTOMER_ID string = logAnalytics.outputs.customerId

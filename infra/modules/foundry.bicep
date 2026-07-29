@@ -30,6 +30,10 @@ resource account 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
   properties: {
     customSubDomainName: name
     publicNetworkAccess: 'Enabled'
+    // This harness currently uses local auth so ephemeral E2E deployments can
+    // exercise Foundry streaming without extra pre-provisioned identity setup.
+    // If changing this to managed identity or another auth model, account for the
+    // resulting E2E setup, permissions, cleanup, and secret-handling tradeoffs.
     disableLocalAuth: false
   }
 }
@@ -54,5 +58,5 @@ output endpoint string = account.properties.endpoint
 output accountName string = account.name
 output deploymentName string = deployment.name
 
-#disable-next-line outputs-should-not-contain-secrets
+@secure()
 output apiKey string = account.listKeys().key1

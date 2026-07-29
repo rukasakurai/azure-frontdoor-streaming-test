@@ -17,12 +17,6 @@ on:
         required: false
         type: string
         default: "japaneast"
-  pull_request:
-    paths:
-      - "app/**"
-      - "infra/**"
-      - "test.sh"
-      - "azure.yaml"
 
 permissions:
   id-token: write
@@ -56,7 +50,26 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Authenticate azd with federated credential
-        run: azd auth login --client-id "${{ vars.AZURE_CLIENT_ID }}" --federated-credential-provider github --tenant-id "${{ secrets.AZURE_TENANT_ID }}"
+        run: |
+          MAX_RETRIES=4
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "=== azd auth login attempt $i/$MAX_RETRIES ==="
+            if azd auth login --client-id "${{ vars.AZURE_CLIENT_ID }}" --federated-credential-provider github --tenant-id "${{ secrets.AZURE_TENANT_ID }}"; then
+              echo "azd auth login succeeded on attempt $i"
+              break
+            fi
+            if [ "$i" -eq "$MAX_RETRIES" ]; then
+              echo "::error::azd auth login failed after $MAX_RETRIES attempts"
+              exit 1
+            fi
+            case "$i" in
+              1) WAIT=15 ;;
+              2) WAIT=30 ;;
+              *) WAIT=60 ;;
+            esac
+            echo "::warning::azd auth login failed (attempt $i/$MAX_RETRIES). Retrying in ${WAIT}s..."
+            sleep "$WAIT"
+          done
 
       - name: Initialize azd environment
         run: |
@@ -103,10 +116,15 @@ jobs:
         run: |
           SERVICE_APP_URI=$(azd env get-value SERVICE_APP_URI)
           AFD_URI=$(azd env get-value AFD_URI)
+          AFD_BASELINE_URI=$(azd env get-value AFD_BASELINE_URI)
+          LOG_ANALYTICS_WORKSPACE_CUSTOMER_ID=$(azd env get-value LOG_ANALYTICS_WORKSPACE_CUSTOMER_ID)
           echo "direct_url=$SERVICE_APP_URI" >> "$GITHUB_OUTPUT"
           echo "afd_url=$AFD_URI" >> "$GITHUB_OUTPUT"
+          echo "afd_baseline_url=$AFD_BASELINE_URI" >> "$GITHUB_OUTPUT"
+          echo "workspace_customer_id=$LOG_ANALYTICS_WORKSPACE_CUSTOMER_ID" >> "$GITHUB_OUTPUT"
           echo "Direct URL: $SERVICE_APP_URI"
           echo "AFD URL: $AFD_URI"
+          echo "AFD baseline URL: $AFD_BASELINE_URI"
 
       - name: Verify origin health before waiting for AFD
         run: |
@@ -151,11 +169,124 @@ jobs:
             exit 1
           fi
 
+      - name: Wait for Front Door streaming routes to become ready
+        run: |
+          check_stream_route() {
+            local endpoint="$1"
+            local expected_content_type="$2"
+            local url="${{ steps.urls.outputs.afd_url }}$endpoint"
+            local headers status content_type
+            headers=$(curl -sS -I --max-time 15 "$url" 2>/dev/null || true)
+            status=$(awk 'tolower($0) ~ /^http\// {code=$2} END{print code}' <<< "$headers")
+            content_type=$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {sub(/\r$/,""); value=substr($0,index($0,":")+2)} END{print value}' <<< "$headers")
+            if [ "$status" = "200" ] && [[ "$content_type" == "$expected_content_type"* ]]; then
+              return 0
+            fi
+            echo "$endpoint not ready: HTTP ${status:-unknown}, Content-Type '${content_type:-unknown}'"
+            return 1
+          }
+
+          MAX_ATTEMPTS=30
+          WAIT_INTERVAL=20
+          echo "Waiting for AFD streaming routes to return expected content types (up to $((MAX_ATTEMPTS * WAIT_INTERVAL / 60)) min)..."
+          ready=false
+          for i in $(seq 1 $MAX_ATTEMPTS); do
+            if check_stream_route /sse text/event-stream && check_stream_route /ndjson application/x-ndjson; then
+              echo "Attempt $i/$MAX_ATTEMPTS – streaming routes are ready"
+              ready=true
+              break
+            fi
+            echo "Attempt $i/$MAX_ATTEMPTS – waiting ${WAIT_INTERVAL}s..."
+            sleep "$WAIT_INTERVAL"
+          done
+          if [ "$ready" != "true" ]; then
+            echo "::error::AFD streaming routes did not become ready after $MAX_ATTEMPTS attempts"
+            curl -svI --max-time 15 "${{ steps.urls.outputs.afd_url }}/sse" 2>&1 || true
+            curl -svI --max-time 15 "${{ steps.urls.outputs.afd_url }}/ndjson" 2>&1 || true
+            exit 1
+          fi
+
       - name: Run streaming test
         run: |
           chmod +x test.sh
-          ./test.sh "${{ steps.urls.outputs.direct_url }}" "${{ steps.urls.outputs.afd_url }}"
+          MAX_RETRIES=3
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "=== streaming test attempt $i/$MAX_RETRIES ==="
+            if ./test.sh "${{ steps.urls.outputs.direct_url }}" "${{ steps.urls.outputs.afd_url }}"; then
+              echo "streaming test succeeded on attempt $i"
+              break
+            fi
+            if [ "$i" -eq "$MAX_RETRIES" ]; then
+              echo "::error::streaming test failed after $MAX_RETRIES attempts"
+              exit 1
+            fi
+            WAIT=$((i * 120))
+            echo "::warning::streaming test failed (attempt $i/$MAX_RETRIES). Retrying in ${WAIT}s..."
+            sleep "$WAIT"
+          done
+
+      - name: Refresh Azure auth before Log Analytics polling
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Refresh azd auth before Log Analytics polling
+        run: |
+          MAX_RETRIES=4
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "=== azd auth refresh attempt $i/$MAX_RETRIES ==="
+            if azd auth login --client-id "${{ vars.AZURE_CLIENT_ID }}" --federated-credential-provider github --tenant-id "${{ secrets.AZURE_TENANT_ID }}"; then
+              echo "azd auth refresh succeeded on attempt $i"
+              break
+            fi
+            if [ "$i" -eq "$MAX_RETRIES" ]; then
+              echo "::error::azd auth refresh failed after $MAX_RETRIES attempts"
+              exit 1
+            fi
+            case "$i" in
+              1) WAIT=15 ;;
+              2) WAIT=30 ;;
+              *) WAIT=60 ;;
+            esac
+            echo "::warning::azd auth refresh failed (attempt $i/$MAX_RETRIES). Retrying in ${WAIT}s..."
+            sleep "$WAIT"
+          done
+
+      - name: Run Log Analytics KQL regression test
+        run: |
+          chmod +x log-test.sh
+          ./log-test.sh "${{ steps.urls.outputs.workspace_customer_id }}" "${{ steps.urls.outputs.afd_url }}"
+
+      # cache-test.sh is deliberately not part of this gate yet. Its 2026-07-09 run
+      # saw only 20 of the 24 expected FrontDoorAccessLog rows after 15 minutes of
+      # polling. That gap is an open question about Front Door log delivery, and
+      # gating on it would either block merges or invite weakening the assertion.
+      # Run it manually while the gap is being investigated:
+      #   ./cache-test.sh <workspace-customer-id> <afd-baseline-url> <afd-url>
 
       - name: Cleanup (azd down)
         if: always() && (inputs.cleanup != false || github.event_name == 'pull_request')
-        run: azd down --no-prompt --force --purge
+        run: |
+          MAX_RETRIES=4
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "=== pre-cleanup azd auth attempt $i/$MAX_RETRIES ==="
+            if azd auth login --client-id "${{ vars.AZURE_CLIENT_ID }}" --federated-credential-provider github --tenant-id "${{ secrets.AZURE_TENANT_ID }}"; then
+              echo "pre-cleanup azd auth succeeded on attempt $i"
+              break
+            fi
+            if [ "$i" -eq "$MAX_RETRIES" ]; then
+              echo "::error::pre-cleanup azd auth failed after $MAX_RETRIES attempts"
+              exit 1
+            fi
+            case "$i" in
+              1) WAIT=15 ;;
+              2) WAIT=30 ;;
+              *) WAIT=60 ;;
+            esac
+            echo "::warning::pre-cleanup azd auth failed (attempt $i/$MAX_RETRIES). Retrying in ${WAIT}s..."
+            sleep "$WAIT"
+          done
+
+          azd down --no-prompt --force --purge

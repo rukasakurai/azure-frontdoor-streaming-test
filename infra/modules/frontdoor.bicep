@@ -10,10 +10,14 @@ param originHostName string
 @description('Unique token used to avoid resource-name collisions (e.g. uniqueString output).')
 param resourceToken string
 
+@description('Resource ID of the Log Analytics workspace that receives Front Door access logs.')
+param logAnalyticsWorkspaceId string
+
 var originGroupName = 'app-origin-group'
 var originName = 'app-origin'
 var endpointName = 'ep-${resourceToken}'
 var routeName = 'default-route'
+var ruleSetName = 'cacheRules'
 
 resource afdProfile 'Microsoft.Cdn/profiles@2024-09-01' = {
   name: name
@@ -73,7 +77,11 @@ resource endpoint 'Microsoft.Cdn/profiles/afdEndpoints@2024-09-01' = {
 resource route 'Microsoft.Cdn/profiles/afdEndpoints/routes@2024-09-01' = {
   parent: endpoint
   name: routeName
-  dependsOn: [origin]
+  dependsOn: [
+    origin
+    baselineCacheRule
+    optimizedCacheRule
+  ]
   properties: {
     enabledState: 'Enabled'
     originGroup: {
@@ -84,6 +92,121 @@ resource route 'Microsoft.Cdn/profiles/afdEndpoints/routes@2024-09-01' = {
     forwardingProtocol: 'HttpsOnly'
     linkToDefaultDomain: 'Enabled'
     httpsRedirect: 'Enabled'
+    ruleSets: [
+      {
+        id: ruleSet.id
+      }
+    ]
+  }
+}
+
+resource ruleSet 'Microsoft.Cdn/profiles/ruleSets@2024-09-01' = {
+  parent: afdProfile
+  name: ruleSetName
+}
+
+resource baselineCacheRule 'Microsoft.Cdn/profiles/ruleSets/rules@2024-09-01' = {
+  parent: ruleSet
+  name: 'baselineUseQueryString'
+  properties: {
+    order: 1
+    matchProcessingBehavior: 'Stop'
+    conditions: [
+      {
+        name: 'UrlPath'
+        parameters: {
+          operator: 'BeginsWith'
+          negateCondition: false
+          matchValues: [
+            'cache-baseline/static-test/query/'
+          ]
+          transforms: []
+          typeName: 'DeliveryRuleUrlPathMatchConditionParameters'
+        }
+      }
+    ]
+    actions: [
+      {
+        name: 'RouteConfigurationOverride'
+        parameters: {
+          cacheConfiguration: {
+            queryStringCachingBehavior: 'UseQueryString'
+            isCompressionEnabled: 'Enabled'
+            cacheBehavior: 'HonorOrigin'
+            cacheDuration: null
+          }
+          originGroupOverride: null
+          typeName: 'DeliveryRuleRouteConfigurationOverrideActionParameters'
+        }
+      }
+    ]
+  }
+}
+
+resource optimizedCacheRule 'Microsoft.Cdn/profiles/ruleSets/rules@2024-09-01' = {
+  parent: ruleSet
+  name: 'optimizedIgnoreQueryString'
+  properties: {
+    order: 2
+    matchProcessingBehavior: 'Stop'
+    conditions: [
+      {
+        name: 'UrlPath'
+        parameters: {
+          operator: 'BeginsWith'
+          negateCondition: false
+          matchValues: [
+            'static-test/'
+          ]
+          transforms: []
+          typeName: 'DeliveryRuleUrlPathMatchConditionParameters'
+        }
+      }
+    ]
+    actions: [
+      {
+        name: 'RouteConfigurationOverride'
+        parameters: {
+          cacheConfiguration: {
+            queryStringCachingBehavior: 'IgnoreQueryString'
+            isCompressionEnabled: 'Enabled'
+            cacheBehavior: 'HonorOrigin'
+            cacheDuration: null
+          }
+          originGroupOverride: null
+          typeName: 'DeliveryRuleRouteConfigurationOverrideActionParameters'
+        }
+      }
+    ]
+  }
+}
+
+// Latest stable diagnosticSettings API does not support scoped extension resources for this target.
+resource accessLogs 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  name: 'frontdoor-access-logs'
+  scope: afdProfile
+  properties: {
+    workspaceId: logAnalyticsWorkspaceId
+    logs: [
+      {
+        categoryGroup: 'allLogs'
+        enabled: true
+        retentionPolicy: {
+          days: 0
+          enabled: false
+        }
+      }
+    ]
+    metrics: [
+      {
+        category: 'AllMetrics'
+        enabled: false
+        retentionPolicy: {
+          days: 0
+          enabled: false
+        }
+      }
+    ]
   }
 }
 
