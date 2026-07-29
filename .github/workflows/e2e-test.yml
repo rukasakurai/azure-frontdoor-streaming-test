@@ -263,9 +263,12 @@ jobs:
       # cache-test.sh's 2026-07-09 run saw only 20 of the 24 expected FrontDoorAccessLog
       # rows after 15 minutes of polling. That gap is an open question about Front Door
       # log delivery, and gating on it would either block merges or invite weakening the
-      # assertion. auth-cache-test.sh reads the same log and is an experiment rather than
-      # a regression check, so it shares the same caveat.
-      # Run them manually while the gap is being investigated:
+      # assertion. auth-cache-test.sh is excluded for a different reason: it is an
+      # experiment rather than a regression check, so a changed result is a finding to
+      # read, not a build to fail. Its three 2026-07-29 runs all reached the full
+      # expected row count, so they do not reproduce the cache-test.sh shortfall and
+      # should not be cited as evidence about it either way.
+      # Run them manually:
       #   ./cache-test.sh <workspace-customer-id> <afd-baseline-url> <afd-url>
       #   ./auth-cache-test.sh <workspace-customer-id> <afd-url> <direct-url>
 

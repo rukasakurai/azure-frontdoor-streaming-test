@@ -162,11 +162,27 @@ Two details make the arms trustworthy:
   back to an arm.
 
 All arms stay on the same route, so no redeployment happens mid-run. The script prints
-`X-Cache`, `Age`, `Cache-Control`, and `Content-Encoding` per request, then the
-`cacheStatus_s` value from the access log. Its exit code reflects whether the
+`X-Cache`, `Age`, `X-Cache-Info`, `Cache-Control`, and `Content-Encoding` per request,
+then the `cacheStatus_s` value from the access log. Its exit code reflects whether the
 experiment was **conclusive** — a falsified hypothesis is a result, not a failure — so
-it exits non-zero only when requests fail, logs never arrive, or the unauthenticated
-control arm never caches.
+it exits non-zero only when requests fail, logs never arrive, the unauthenticated
+control arm never caches, or a cache status turns up that the script has no validated
+meaning for.
+
+That last guard matters. Classifying a status as a hit requires a vocabulary, and
+hardcoding one is circular when establishing that vocabulary is itself an open
+question. Statuses are therefore split into **confirmed** (observed here, meaning
+settled), **uninterpreted** (documented by Microsoft but never observed here), and
+unrecognised. Hitting either of the latter two stops the run and says so, rather than
+silently folding an unknown hit into "not a hit" and then blaming the control arm for
+never caching. Classification happens in bash over raw log rows, not in an `in (...)`
+KQL clause, so there is one vocabulary to audit. `timeTaken` is reported alongside as
+an origin-fetch signal that owes nothing to the vocabulary, and the script warns if the
+timing ordering contradicts the status classification.
+
+Confirmed so far: `HIT`, `REMOTE_HIT`, `MISS` and their `X-Cache` counterparts
+`TCP_HIT`, `TCP_REMOTE_HIT`, `TCP_MISS`. Still uninterpreted: `PARTIAL_HIT`,
+`PRIVATE_NOSTORE`, `CACHE_NOCONFIG`, `N/A`.
 
 The `Authorization` value it sends is a throwaway placeholder. Front Door only needs
 the header to be present, and the origin never inspects it. Pass `AZ_SUBSCRIPTION` if
@@ -174,30 +190,58 @@ the workspace isn't in the az CLI's default subscription.
 
 #### Recorded result
 
-Run `auth-cache-20260729T024205Z`, Japan East, Front Door Premium, asset `app.js`:
+Three runs, 2026-07-29, Japan East, Front Door Premium, asset `app.js`, all served by
+the `TYO` POP (`auth-cache-20260729T024205Z`, `...T030333Z`, `...T030634Z`):
 
-| Arm | Request 1 | Request 2 | Request 3 | Access log `cacheStatus` |
-|-----|-----------|-----------|-----------|--------------------------|
-| 1 — no `Authorization`, no `Cache-Control` | `TCP_MISS` | `TCP_HIT` | `TCP_HIT` | MISS, HIT, HIT |
-| 2 — `Authorization`, no `Cache-Control` | `TCP_MISS` | `TCP_MISS` | `TCP_MISS` | MISS, MISS, MISS |
-| 3 — `Authorization`, `public, max-age=300` | `TCP_MISS` | `TCP_HIT` | `TCP_REMOTE_HIT` | MISS, HIT, REMOTE_HIT |
+| Arm | Request 1 | Requests 2–3 | Post-prime `cacheStatus` |
+|-----|-----------|--------------|--------------------------|
+| 1 — no `Authorization`, no `Cache-Control` | `TCP_MISS` ×3 | cached in 3/3 runs | HIT, REMOTE_HIT |
+| 2 — `Authorization`, no `Cache-Control` | `TCP_MISS` ×3 | **never cached, 6/6 requests `TCP_MISS`** | MISS |
+| 3 — `Authorization`, `public, max-age=300` | `TCP_MISS` ×3 | cached in 3/3 runs | HIT, REMOTE_HIT |
 
 **H1 supported.** An auth-suppressed response reports `X-Cache: TCP_MISS` and
 `cacheStatus: MISS` — *not* `PRIVATE_NOSTORE`, which the docs reserve for a
-`Cache-Control` of `private` or `no-store`. So a static asset stuck on `TCP_MISS` is
-indistinguishable from an ordinary cold miss by cache status alone; the request headers
-have to be checked too. `timeTaken` corroborates the arm-2 misses as real origin
-fetches (0.12–0.23 s) against arm-1 and arm-3 hits (0.001–0.005 s).
+`Cache-Control` of `private` or `no-store`. `timeTaken` corroborates the arm-2 misses
+as real origin fetches: in every run arm 2's slowest post-prime request was slower than
+the cached control arm's (0.028–0.121 s against 0.001–0.005 s).
 
 **H2 supported.** `Cache-Control: public, max-age=300` restored caching for the
-identical authorized request.
+identical authorized request, in all three runs.
 
-Front Door sent no `Age` header on any response, including hits. `Content-Encoding` was
-absent throughout: the assets are below the compression size floor.
+**The consequence is diagnostically negative.** Because an auth-suppressed response is
+reported exactly like an ordinary cold miss, *no cache-status value can tell you the
+`Authorization` header was the cause*. A `TCP_MISS` is not evidence of auth
+suppression, and an access log alone can never establish it. The only way to implicate
+this mechanism is to check whether the request actually carried an `Authorization`
+header. Browsers don't attach one to `<script src>` or `<link href>` subresource
+loads — only to explicit `fetch`/XHR calls — so for a plain static asset this mechanism
+is usually the wrong suspect.
 
-Before suspecting this mechanism for a real asset, confirm the asset is actually
-fetched with an `Authorization` header. Browsers don't attach one to `<script src>` or
-`<link href>` subresource loads — only to explicit `fetch`/XHR calls.
+**Scope of these numbers.** Three runs, 27 requests, all served by a single POP —
+`TYO`, confirmed from the access log's `pop_s` column rather than assumed. That is
+enough to say the effect is reproducible and not a single-sample artefact, and the
+result is further credible because the documented mechanism predicts it. It is *not*
+enough to characterise Front Door as a whole: caching is per-POP, and POP-to-POP and
+profile-to-profile behaviour is untested here.
+
+Two incidental observations, offered as observations rather than properties:
+
+- **No `Age` header, ever.** Absent from all 27 responses across the three runs, and
+  from a separate probe that deliberately re-fetched cached objects at ~10 s, ~70 s and
+  ~190 s of age on both scenarios. Consistent, but all from the `TYO` POP on one
+  profile. If you have asked someone to report the `Age` header on a Front Door
+  response, their "no such field" answer may be a property of Front Door rather than of
+  their asset. Note also that `FrontDoorAccessLog` has **no `Age` column** — verified
+  via `getschema` — so a log-based check and a response-header check are different
+  questions, and only the latter is answerable at all.
+- **`X-Cache-Info: L1_T2` / `L2_T2`**, undocumented. Where present it correlated
+  perfectly with the tier that answered — `L1_T2` with every `TCP_HIT`, `L2_T2` with
+  every `TCP_REMOTE_HIT`. It is not always sent. This makes the `TCP_HIT` ↔
+  `TCP_REMOTE_HIT` alternation across requests ordinary edge-versus-regional tier
+  routing rather than noise.
+
+`Content-Encoding` was absent throughout: the assets sit below the compression size
+floor.
 
 ## Results
 
