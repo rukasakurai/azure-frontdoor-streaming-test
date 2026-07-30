@@ -22,6 +22,8 @@ Azure Front Door is a global load-balancer/CDN. There is uncertainty about wheth
 
 The `/sse` and `/ndjson` endpoints use fixed-interval mock data, while `/sse-agent` calls an actual **Microsoft Foundry** model deployment to test streaming with realistic AI inference characteristics (irregular timing, variable chunk sizes, model-speed token delivery).
 
+Streaming is the primary question. Because the deployment already provides an origin behind Front Door with access logging wired up, the repo also carries a secondary set of scripts that probe AFD **caching** behaviour — see [Front Door Cache Tests](#front-door-cache-tests).
+
 ## Prerequisites
 
 | Tool | Notes |
@@ -92,8 +94,10 @@ azd down
 | `GET /sse-agent` | `text/event-stream` | Proxies a streaming chat completion from Microsoft Foundry when an API key is configured |
 | `GET /static-test/cacheable/{asset}` | varies | Cacheable static assets for AFD cache-status checks |
 | `GET /static-test/no-store/{asset}` | varies | Static assets that intentionally opt out of caching |
+| `GET /static-test/no-cache-control/{asset}` | varies | Static assets served with **no** `Cache-Control` header, so AFD falls back to its own default cache duration |
 | `GET /static-test/query/{asset}` | varies | Cacheable static assets for query-string cache checks |
 | `GET /static-test/large/large.txt` | `text/plain` | Larger text asset for size/compression checks |
+| `GET /static-test/{scenario}/{token}/{asset}` | varies | Same as above, with an ignored `{token}` segment so a test arm can claim a distinct AFD cache key |
 | `GET /cache-baseline/static-test/query/{asset}` | varies | Baseline cache rule using query strings in the cache key |
 | `GET /health` | `application/json` | Returns `{"status":"ok"}` – used by AFD health probe |
 
@@ -123,6 +127,51 @@ For each endpoint and each URL it:
 | SSE-Agent (Foundry) via AFD | Streaming (≤2 s lag per chunk) | ✅ Streaming — per-chunk Δ from −0.140 s to +0.312 s |
 
 > Tested 2026-04-04 in Japan East. Azure Front Door Premium passes through SSE, NDJSON, and Foundry agent streams without buffering.
+
+## Front Door Cache Tests
+
+Separate from the streaming question above, three scripts read the Front Door access
+log from Log Analytics to check cache behaviour. All three need a live deployment, so
+none of them run on a pull request. `log-test.sh` is wired into `e2e-test.yml`, which
+is manually dispatched; the other two are hand-run only.
+
+| Script | Purpose | Automated |
+|--------|---------|-----------|
+| `log-test.sh <workspace-customer-id> <afd-url>` | Verifies AFD access logs reach Log Analytics with the columns the other tests need | in `e2e-test.yml` (manual dispatch) |
+| `cache-test.sh <workspace-customer-id> <afd-baseline-url> <afd-url>` | Compares MISS rates between the query-string-keyed baseline route and the query-string-ignoring route | no |
+| `auth-cache-test.sh <workspace-customer-id> <afd-url> [direct-url]` | Records how AFD reports cache status when an `Authorization` header suppresses caching | no |
+
+Get the arguments from `azd env get-value LOG_ANALYTICS_WORKSPACE_CUSTOMER_ID`,
+`azd env get-value AFD_URI`, `azd env get-value AFD_BASELINE_URI`, and
+`azd env get-value SERVICE_APP_URI`.
+
+> **Maintenance.** `cache-test.sh` and `auth-cache-test.sh` are not wired into any
+> workflow, so **nothing will report it if they break** — and since `e2e-test.yml` is
+> manual, that is true of `log-test.sh` too until someone dispatches it. The two are
+> left out for different reasons. `cache-test.sh` is a regression check that isn't
+> safe to automate yet: its 2026-07-09 run saw only 20 of 24
+> expected access-log rows inside the polling window, and the cause was never pinned
+> down — ingestion latency, the polling window and the test itself are all still on
+> the table. `auth-cache-test.sh` is an experiment, where a changed result is a
+> finding to read rather than a build to fail. Re-run both by hand when touching
+> `app/server.js` static-asset routes or the Front Door rule set in
+> `infra/modules/frontdoor.bicep`, and expect to fix bit-rot when you do.
+
+### Finding: `Authorization` suppresses caching, reported as an ordinary MISS
+
+A request carrying an `Authorization` header isn't cached unless the response permits
+it via `Cache-Control` — and Front Door reports that suppression as plain
+`X-Cache: TCP_MISS` / `cacheStatus: MISS`, not `PRIVATE_NOSTORE`. Adding
+`Cache-Control: public, max-age=300` restores caching for the identical request.
+
+The consequence is **diagnostically negative**: an auth-suppressed response is
+indistinguishable from an ordinary cold miss, so no cache status can prove the header
+was the cause — you have to inspect the request headers instead.
+
+The recorded three-run results, the confirmed cache-status vocabulary, and two
+incidental findings are in
+[docs/auth-cache-result.md](docs/auth-cache-result.md); the method is documented in the
+script's own header comment.
 
 ## Local Development
 
