@@ -131,12 +131,13 @@ For each endpoint and each URL it:
 ## Front Door Cache Tests
 
 Separate from the streaming question above, three scripts read the Front Door access
-log from Log Analytics to check cache behaviour. Only `log-test.sh` is part of the CI
-gate; run the other two by hand against a deployed environment.
+log from Log Analytics to check cache behaviour. All three need a live deployment, so
+none of them run on a pull request. `log-test.sh` is wired into `e2e-test.yml`, which
+is manually dispatched; the other two are hand-run only.
 
-| Script | Purpose | In CI gate |
-|--------|---------|------------|
-| `log-test.sh <workspace-customer-id> <afd-url>` | Verifies AFD access logs reach Log Analytics with the columns the other tests need | yes |
+| Script | Purpose | Automated |
+|--------|---------|-----------|
+| `log-test.sh <workspace-customer-id> <afd-url>` | Verifies AFD access logs reach Log Analytics with the columns the other tests need | in `e2e-test.yml` (manual dispatch) |
 | `cache-test.sh <workspace-customer-id> <afd-baseline-url> <afd-url>` | Compares MISS rates between the query-string-keyed baseline route and the query-string-ignoring route | no |
 | `auth-cache-test.sh <workspace-customer-id> <afd-url> [direct-url]` | Records how AFD reports cache status when an `Authorization` header suppresses caching | no |
 
@@ -144,10 +145,11 @@ Get the arguments from `azd env get-value LOG_ANALYTICS_WORKSPACE_CUSTOMER_ID`,
 `azd env get-value AFD_URI`, `azd env get-value AFD_BASELINE_URI`, and
 `azd env get-value SERVICE_APP_URI`.
 
-> **Maintenance.** `cache-test.sh` and `auth-cache-test.sh` need a live deployment,
-> Log Analytics access and the `az` CLI, so no CI job runs them and **nothing will
-> report it if they break**. They are ungated for different reasons. `cache-test.sh`
-> is a regression check that isn't gateable yet: its 2026-07-09 run saw only 20 of 24
+> **Maintenance.** `cache-test.sh` and `auth-cache-test.sh` are not wired into any
+> workflow, so **nothing will report it if they break** — and since `e2e-test.yml` is
+> manual, that is true of `log-test.sh` too until someone dispatches it. The two are
+> left out for different reasons. `cache-test.sh` is a regression check that isn't
+> safe to automate yet: its 2026-07-09 run saw only 20 of 24
 > expected access-log rows inside the polling window, and the cause was never pinned
 > down — ingestion latency, the polling window and the test itself are all still on
 > the table. `auth-cache-test.sh` is an experiment, where a changed result is a

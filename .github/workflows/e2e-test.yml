@@ -259,16 +259,17 @@ jobs:
           chmod +x log-test.sh
           ./log-test.sh "${{ steps.urls.outputs.workspace_customer_id }}" "${{ steps.urls.outputs.afd_url }}"
 
-      # cache-test.sh and auth-cache-test.sh are deliberately not part of this gate yet.
-      # cache-test.sh's 2026-07-09 run saw only 20 of the 24 expected FrontDoorAccessLog
-      # rows inside a 15-minute polling window. The cause was never pinned down --
-      # ingestion latency, the polling window and the test itself are all still on the
-      # table -- and gating on an unexplained shortfall would either block merges or
-      # invite weakening the assertion. auth-cache-test.sh is excluded for a different
-      # reason: it is an experiment rather than a regression check, so a changed result
-      # is a finding to read, not a build to fail. Its three 2026-07-29 runs all reached
-      # the full expected row count, so they do not reproduce the cache-test.sh shortfall
-      # and should not be cited as evidence about it either way.
+      # cache-test.sh and auth-cache-test.sh are deliberately not run by this workflow
+      # yet. cache-test.sh's 2026-07-09 run saw only 20 of the 24 expected
+      # FrontDoorAccessLog rows inside a 15-minute polling window. The cause was never
+      # pinned down -- ingestion latency, the polling window and the test itself are all
+      # still on the table -- and asserting on an unexplained shortfall would either
+      # fail runs at random or invite weakening the assertion. auth-cache-test.sh is
+      # excluded for a different reason: it is an experiment rather than a regression
+      # check, so a changed result is a finding to read, not a build to fail. Its three
+      # 2026-07-29 runs all reached the full expected row count, so they do not
+      # reproduce the cache-test.sh shortfall and should not be cited as evidence about
+      # it either way.
       # Run them manually:
       #   ./cache-test.sh <workspace-customer-id> <afd-baseline-url> <afd-url>
       #   ./auth-cache-test.sh <workspace-customer-id> <afd-url> <direct-url>
