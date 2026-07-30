@@ -146,10 +146,13 @@ Get the arguments from `azd env get-value LOG_ANALYTICS_WORKSPACE_CUSTOMER_ID`,
 
 > **Maintenance.** `cache-test.sh` and `auth-cache-test.sh` need a live deployment,
 > Log Analytics access and the `az` CLI, so no CI job runs them and **nothing will
-> report it if they break**. They are experiments rather than regression checks: a
-> changed result is a finding to read, not a build to fail. Re-run them by hand when
-> touching `app/server.js` static-asset routes or the Front Door rule set in
-> `infra/modules/frontdoor.bicep`, and expect to fix bit-rot when you do.
+> report it if they break**. They are ungated for different reasons. `cache-test.sh`
+> is a regression check that isn't gateable yet: its 2026-07-09 run saw only 20 of 24
+> expected access-log rows, and that delivery gap is unresolved. `auth-cache-test.sh`
+> is an experiment, where a changed result is a finding to read rather than a build to
+> fail. Re-run both by hand when touching `app/server.js` static-asset routes or the
+> Front Door rule set in `infra/modules/frontdoor.bicep`, and expect to fix bit-rot
+> when you do.
 
 ### Finding: `Authorization` suppresses caching, reported as an ordinary MISS
 
