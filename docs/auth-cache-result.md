@@ -63,11 +63,13 @@ The script halts rather than guessing if it sees anything in the right-hand colu
 
 Offered as observations rather than properties:
 
-- **No `Age` header, ever.** Absent from all 27 responses, and from a separate probe that
-  re-fetched cached objects at ~10 s, ~70 s and ~190 s of age, on both scenarios and both
-  cache tiers. `FrontDoorAccessLog` has **no `Age` column** either (verified via
-  `getschema`), so object age isn't observable from the log at all — only from the
-  response header, where it never appeared.
+- **No `Age` header observed.** Absent from all 27 responses, and from a separate probe
+  that re-fetched cached objects at ~10 s, ~70 s and ~190 s of age, on both scenarios and
+  both cache tiers — but all from one profile and the `TYO` POP, so this is consistent
+  behaviour here rather than an established property of Front Door.
+  `FrontDoorAccessLog` has **no `Age` column** either (verified via `getschema`), so
+  object age isn't observable from the log — only from the response header, where it did
+  not appear.
 - **`X-Cache-Info: L1_T2` / `L2_T2`**, undocumented. Where present it correlated perfectly
   with the tier that answered — `L1_T2` with every `TCP_HIT`, `L2_T2` with every
   `TCP_REMOTE_HIT`. It is not always sent. This makes the `TCP_HIT` ↔ `TCP_REMOTE_HIT`

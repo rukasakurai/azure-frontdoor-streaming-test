@@ -84,7 +84,8 @@ header_value() {
   ' <<< "$1"
 }
 
-# Cache-status vocabularies, split by how much we actually know about each value.
+# Cache-status vocabularies, split by how much is actually established about each
+# value.
 # CONFIRMED entries were observed in a real run of this script and their meaning is
 # settled. UNINTERPRETED entries are documented by Microsoft but have never been seen
 # here, so their hit/miss bucket is an assumption. Rather than guess, a run that
