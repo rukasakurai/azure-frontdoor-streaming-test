@@ -22,6 +22,8 @@ Azure Front Door is a global load-balancer/CDN. There is uncertainty about wheth
 
 The `/sse` and `/ndjson` endpoints use fixed-interval mock data, while `/sse-agent` calls an actual **Microsoft Foundry** model deployment to test streaming with realistic AI inference characteristics (irregular timing, variable chunk sizes, model-speed token delivery).
 
+Streaming is the primary question. Because the deployment already provides an origin behind Front Door with access logging wired up, the repo also carries a secondary set of scripts that probe AFD **caching** behaviour — see [Front Door Cache Tests](#front-door-cache-tests).
+
 ## Prerequisites
 
 | Tool | Notes |
@@ -116,11 +118,21 @@ For each endpoint and each URL it:
 
 **Exit code 0** = PASS, **exit code 1** = FAIL.
 
+## Results
+
+| Scenario | Expected | Observed |
+|----------|----------|----------|
+| SSE via AFD | Streaming (≤2 s lag per chunk) | ✅ Streaming — per-chunk Δ from −0.003 s to +0.379 s |
+| NDJSON via AFD | Streaming (≤2 s lag per chunk) | ✅ Streaming — per-chunk Δ from +0.021 s to +0.481 s |
+| SSE-Agent (Foundry) via AFD | Streaming (≤2 s lag per chunk) | ✅ Streaming — per-chunk Δ from −0.140 s to +0.312 s |
+
+> Tested 2026-04-04 in Japan East. Azure Front Door Premium passes through SSE, NDJSON, and Foundry agent streams without buffering.
+
 ## Front Door Cache Tests
 
-Three additional scripts read the Front Door access log from Log Analytics. Only
-`log-test.sh` is part of the CI gate; run the other two by hand against a deployed
-environment.
+Separate from the streaming question above, three scripts read the Front Door access
+log from Log Analytics to check cache behaviour. Only `log-test.sh` is part of the CI
+gate; run the other two by hand against a deployed environment.
 
 | Script | Purpose | In CI gate |
 |--------|---------|------------|
@@ -132,126 +144,26 @@ Get the arguments from `azd env get-value LOG_ANALYTICS_WORKSPACE_CUSTOMER_ID`,
 `azd env get-value AFD_URI`, `azd env get-value AFD_BASELINE_URI`, and
 `azd env get-value SERVICE_APP_URI`.
 
-### `auth-cache-test.sh`
+> **Maintenance.** `cache-test.sh` and `auth-cache-test.sh` need a live deployment,
+> Log Analytics access and the `az` CLI, so no CI job runs them and **nothing will
+> report it if they break**. They are experiments rather than regression checks: a
+> changed result is a finding to read, not a build to fail. Re-run them by hand when
+> touching `app/server.js` static-asset routes or the Front Door rule set in
+> `infra/modules/frontdoor.bicep`, and expect to fix bit-rot when you do.
 
-[Front Door's caching docs](https://learn.microsoft.com/en-us/azure/frontdoor/front-door-caching)
-say a request carrying an `Authorization` header isn't cached unless the response
-carries a `Cache-Control` directive that permits caching, but they don't say which
-cache status such a response reports. This script measures it, using one asset and
-three arms:
+### Finding: `Authorization` suppresses caching, reported as an ordinary MISS
 
-| Arm | `Authorization` | Origin `Cache-Control` | Expected |
-|-----|-----------------|------------------------|----------|
-| 1 | absent | absent | 2nd request HIT — AFD's default 1–3 day cache applies |
-| 2 | present | absent | stays MISS |
-| 3 | present | `public, max-age=300` | 2nd request HIT |
+A request carrying an `Authorization` header isn't cached unless the response permits
+it via `Cache-Control` — and Front Door reports that suppression as plain
+`X-Cache: TCP_MISS` / `cacheStatus: MISS`, not `PRIVATE_NOSTORE`. Adding
+`Cache-Control: public, max-age=300` restores caching for the identical request.
 
-Hypotheses: **H1** — arm 2 is reported as `X-Cache: TCP_MISS` rather than
-`PRIVATE_NOSTORE`. **H2** — `Cache-Control: public, max-age=300` restores caching for
-the same authorized request. H1 is falsified if arm 2 turns HIT.
+The consequence is **diagnostically negative**: an auth-suppressed response is
+indistinguishable from an ordinary cold miss, so no cache status can prove the header
+was the cause — you have to inspect the request headers instead.
 
-Two details make the arms trustworthy:
-
-- With no `Cache-Control`, AFD caches for a **random 1–3 days**, so arm 1 can leave an
-  object that makes arm 2 falsely HIT. Every arm therefore uses a **unique path**
-  (`/static-test/{scenario}/{run-id}-{arm}/app.js`). Waiting doesn't help, because the
-  cache is per-POP.
-- Query strings can't provide that uniqueness: the `static-test/` route runs with
-  `queryStringCachingBehavior: IgnoreQueryString`. That is exactly why they are safe
-  to use as per-request labels (`?run=...&req=N`), which is how log rows are attributed
-  back to an arm.
-
-All arms stay on the same route, so no redeployment happens mid-run. The script prints
-`X-Cache`, `Age`, `X-Cache-Info`, `Cache-Control`, and `Content-Encoding` per request,
-then the `cacheStatus_s` value from the access log. Its exit code reflects whether the
-experiment was **conclusive** — a falsified hypothesis is a result, not a failure — so
-it exits non-zero only when requests fail, logs never arrive, the unauthenticated
-control arm never caches, or a cache status turns up that the script has no validated
-meaning for.
-
-That last guard matters. Classifying a status as a hit requires a vocabulary, and
-hardcoding one is circular when establishing that vocabulary is itself an open
-question. Statuses are therefore split into **confirmed** (observed here, meaning
-settled), **uninterpreted** (documented by Microsoft but never observed here), and
-unrecognised. Hitting either of the latter two stops the run and says so, rather than
-silently folding an unknown hit into "not a hit" and then blaming the control arm for
-never caching. Classification happens in bash over raw log rows, not in an `in (...)`
-KQL clause, so there is one vocabulary to audit. `timeTaken` is reported alongside as
-an origin-fetch signal that owes nothing to the vocabulary, and the script warns if the
-timing ordering contradicts the status classification.
-
-Confirmed so far: `HIT`, `REMOTE_HIT`, `MISS` and their `X-Cache` counterparts
-`TCP_HIT`, `TCP_REMOTE_HIT`, `TCP_MISS`. Still uninterpreted: `PARTIAL_HIT`,
-`PRIVATE_NOSTORE`, `CACHE_NOCONFIG`, `N/A`.
-
-The `Authorization` value it sends is a throwaway placeholder. Front Door only needs
-the header to be present, and the origin never inspects it. Pass `AZ_SUBSCRIPTION` if
-the workspace isn't in the az CLI's default subscription.
-
-#### Recorded result
-
-Three runs, 2026-07-29, Japan East, Front Door Premium, asset `app.js`, all served by
-the `TYO` POP (`auth-cache-20260729T024205Z`, `...T030333Z`, `...T030634Z`):
-
-| Arm | Request 1 | Requests 2–3 | Post-prime `cacheStatus` |
-|-----|-----------|--------------|--------------------------|
-| 1 — no `Authorization`, no `Cache-Control` | `TCP_MISS` ×3 | cached in 3/3 runs | HIT, REMOTE_HIT |
-| 2 — `Authorization`, no `Cache-Control` | `TCP_MISS` ×3 | **never cached, 6/6 requests `TCP_MISS`** | MISS |
-| 3 — `Authorization`, `public, max-age=300` | `TCP_MISS` ×3 | cached in 3/3 runs | HIT, REMOTE_HIT |
-
-**H1 supported.** An auth-suppressed response reports `X-Cache: TCP_MISS` and
-`cacheStatus: MISS` — *not* `PRIVATE_NOSTORE`, which the docs reserve for a
-`Cache-Control` of `private` or `no-store`. `timeTaken` corroborates the arm-2 misses
-as real origin fetches: in every run arm 2's slowest post-prime request was slower than
-the cached control arm's (0.028–0.121 s against 0.001–0.005 s).
-
-**H2 supported.** `Cache-Control: public, max-age=300` restored caching for the
-identical authorized request, in all three runs.
-
-**The consequence is diagnostically negative.** Because an auth-suppressed response is
-reported exactly like an ordinary cold miss, *no cache-status value can tell you the
-`Authorization` header was the cause*. A `TCP_MISS` is not evidence of auth
-suppression, and an access log alone can never establish it. The only way to implicate
-this mechanism is to check whether the request actually carried an `Authorization`
-header. Browsers don't attach one to `<script src>` or `<link href>` subresource
-loads — only to explicit `fetch`/XHR calls — so for a plain static asset this mechanism
-is usually the wrong suspect.
-
-**Scope of these numbers.** Three runs, 27 requests, all served by a single POP —
-`TYO`, confirmed from the access log's `pop_s` column rather than assumed. That is
-enough to say the effect is reproducible and not a single-sample artefact, and the
-result is further credible because the documented mechanism predicts it. It is *not*
-enough to characterise Front Door as a whole: caching is per-POP, and POP-to-POP and
-profile-to-profile behaviour is untested here.
-
-Two incidental observations, offered as observations rather than properties:
-
-- **No `Age` header, ever.** Absent from all 27 responses across the three runs, and
-  from a separate probe that deliberately re-fetched cached objects at ~10 s, ~70 s and
-  ~190 s of age on both scenarios. Consistent, but all from the `TYO` POP on one
-  profile. If you have asked someone to report the `Age` header on a Front Door
-  response, their "no such field" answer may be a property of Front Door rather than of
-  their asset. Note also that `FrontDoorAccessLog` has **no `Age` column** — verified
-  via `getschema` — so a log-based check and a response-header check are different
-  questions, and only the latter is answerable at all.
-- **`X-Cache-Info: L1_T2` / `L2_T2`**, undocumented. Where present it correlated
-  perfectly with the tier that answered — `L1_T2` with every `TCP_HIT`, `L2_T2` with
-  every `TCP_REMOTE_HIT`. It is not always sent. This makes the `TCP_HIT` ↔
-  `TCP_REMOTE_HIT` alternation across requests ordinary edge-versus-regional tier
-  routing rather than noise.
-
-`Content-Encoding` was absent throughout: the assets sit below the compression size
-floor.
-
-## Results
-
-| Scenario | Expected | Observed |
-|----------|----------|----------|
-| SSE via AFD | Streaming (≤2 s lag per chunk) | ✅ Streaming — per-chunk Δ from −0.003 s to +0.379 s |
-| NDJSON via AFD | Streaming (≤2 s lag per chunk) | ✅ Streaming — per-chunk Δ from +0.021 s to +0.481 s |
-| SSE-Agent (Foundry) via AFD | Streaming (≤2 s lag per chunk) | ✅ Streaming — per-chunk Δ from −0.140 s to +0.312 s |
-
-> Tested 2026-04-04 in Japan East. Azure Front Door Premium passes through SSE, NDJSON, and Foundry agent streams without buffering.
+Full design notes, the vocabulary guard, and the recorded three-run results are in
+[docs/auth-cache-result.md](docs/auth-cache-result.md).
 
 ## Local Development
 

@@ -5,7 +5,7 @@
 
 ## Repository Purpose
 
-This is a **baseline template repository** designed to provide a minimal, reusable starting point for new GitHub repositories. It establishes foundational structure and conventions without making premature decisions about specific technologies, licenses, or deployment patterns.
+This repository is a **test harness for Azure Front Door (Premium) behaviour**. Its primary question is whether AFD buffers or passes through streaming HTTP responses (SSE and NDJSON); it also carries a secondary set of scripts probing AFD caching behaviour, which reuse the same deployment. See the [README](README.md) for the full picture.
 
 ## Azure Access
 
