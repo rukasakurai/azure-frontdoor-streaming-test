@@ -165,8 +165,10 @@ The consequence is **diagnostically negative**: an auth-suppressed response is
 indistinguishable from an ordinary cold miss, so no cache status can prove the header
 was the cause — you have to inspect the request headers instead.
 
-Full design notes, the vocabulary guard, and the recorded three-run results are in
-[docs/auth-cache-result.md](docs/auth-cache-result.md).
+The recorded three-run results, the confirmed cache-status vocabulary, and two
+incidental findings are in
+[docs/auth-cache-result.md](docs/auth-cache-result.md); the method is documented in the
+script's own header comment.
 
 ## Local Development
 

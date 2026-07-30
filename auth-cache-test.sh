@@ -28,6 +28,13 @@
 #
 # Usage:
 #   ./auth-cache-test.sh <LOG_ANALYTICS_WORKSPACE_CUSTOMER_ID> <AFD_URL> [DIRECT_URL]
+#
+# Optional environment variables:
+#   AZ_SUBSCRIPTION    subscription holding the workspace, if not the az default
+#   REQUESTS_PER_ARM   requests per arm (default 3)
+#   PRIME_GAP_SECONDS  pause between requests (default 5)
+#   MAX_WAIT_SECONDS   how long to wait for access logs to arrive (default 900)
+#   POLL_SECONDS       log poll interval (default 30)
 
 set -euo pipefail
 
